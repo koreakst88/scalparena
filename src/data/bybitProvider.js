@@ -1,7 +1,7 @@
 // src/data/bybitProvider.js
 
+const axios = require('axios');
 const WebSocket = require('ws');
-const https = require('https');
 
 const TRADING_PAIRS = [
   'BTCUSDT',
@@ -51,54 +51,25 @@ class BybitDataProvider {
 
   async validatePairs() {
     console.log('🔍 Validating pairs via REST...');
+    try {
+      const url = `https://${this.restBase}/v5/market/instruments-info?category=linear&limit=1000`;
+      const response = await axios.get(url, { timeout: 10000 });
+      const available = response.data?.result?.list?.map((instrument) => instrument.symbol) || [];
 
-    return new Promise((resolve) => {
-      const path = '/v5/market/instruments-info?category=linear&limit=1000';
-
-      const options = {
-        hostname: this.restBase,
-        path,
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      };
-
-      const req = https.request(options, (res) => {
-        let data = '';
-        res.on('data', (chunk) => {
-          data += chunk;
-        });
-        res.on('end', () => {
-          try {
-            const json = JSON.parse(data);
-            const available = json.result?.list?.map((instrument) => instrument.symbol) || [];
-
-            this.validPairs = TRADING_PAIRS.filter((pair) => {
-              const isValid = available.includes(pair);
-              if (!isValid) {
-                console.warn(`⚠️  Pair NOT found on exchange: ${pair}`);
-              }
-              return isValid;
-            });
-
-            console.log(`✅ Valid pairs: ${this.validPairs.length}/${TRADING_PAIRS.length}`);
-            console.log(`   ${this.validPairs.join(', ')}`);
-            resolve(this.validPairs);
-          } catch (e) {
-            console.error('❌ Failed to parse instruments:', e.message);
-            this.validPairs = [...TRADING_PAIRS];
-            resolve(this.validPairs);
-          }
-        });
+      this.validPairs = TRADING_PAIRS.filter((pair) => {
+        const isValid = available.includes(pair);
+        if (!isValid) console.warn(`⚠️  Pair NOT found: ${pair}`);
+        return isValid;
       });
 
-      req.on('error', (e) => {
-        console.error('❌ REST request failed:', e.message);
-        this.validPairs = [...TRADING_PAIRS];
-        resolve(this.validPairs);
-      });
-
-      req.end();
-    });
+      console.log(`✅ Valid pairs: ${this.validPairs.length}/${TRADING_PAIRS.length}`);
+      console.log(`   ${this.validPairs.join(', ')}`);
+      return this.validPairs;
+    } catch (error) {
+      console.error('❌ validatePairs failed:', error.message);
+      this.validPairs = [...TRADING_PAIRS];
+      return this.validPairs;
+    }
   }
 
   // ─────────────────────────────────────────
@@ -106,55 +77,30 @@ class BybitDataProvider {
   // ─────────────────────────────────────────
 
   async backfillCandles(pair, interval = '60', limit = 50) {
-    return new Promise((resolve) => {
-      const path = `/v5/market/kline?category=linear&symbol=${pair}&interval=${interval}&limit=${limit}`;
+    try {
+      const url = `https://${this.restBase}/v5/market/kline?category=linear&symbol=${pair}&interval=${interval}&limit=${limit}`;
+      const response = await axios.get(url, { timeout: 10000 });
+      const rawCandles = response.data?.result?.list || [];
 
-      const options = {
-        hostname: this.restBase,
-        path,
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      };
+      const candles = rawCandles.reverse().map((candle) => ({
+        timestamp: parseInt(candle[0], 10),
+        open: parseFloat(candle[1]),
+        high: parseFloat(candle[2]),
+        low: parseFloat(candle[3]),
+        close: parseFloat(candle[4]),
+        volume: parseFloat(candle[5]),
+        confirm: true,
+      }));
 
-      const req = https.request(options, (res) => {
-        let data = '';
-        res.on('data', (chunk) => {
-          data += chunk;
-        });
-        res.on('end', () => {
-          try {
-            const json = JSON.parse(data);
-            const rawCandles = json.result?.list || [];
+      if (!this.candleBuffer[pair]) this.candleBuffer[pair] = [];
+      this.candleBuffer[pair] = candles;
 
-            const candles = rawCandles.reverse().map((candle) => ({
-              timestamp: parseInt(candle[0], 10),
-              open: parseFloat(candle[1]),
-              high: parseFloat(candle[2]),
-              low: parseFloat(candle[3]),
-              close: parseFloat(candle[4]),
-              volume: parseFloat(candle[5]),
-              confirm: true,
-            }));
-
-            if (!this.candleBuffer[pair]) this.candleBuffer[pair] = [];
-            this.candleBuffer[pair] = candles;
-
-            console.log(`📥 Backfilled ${candles.length} candles for ${pair}`);
-            resolve(candles);
-          } catch (e) {
-            console.error(`❌ Backfill failed for ${pair}:`, e.message);
-            resolve([]);
-          }
-        });
-      });
-
-      req.on('error', (e) => {
-        console.error(`❌ Backfill request failed for ${pair}:`, e.message);
-        resolve([]);
-      });
-
-      req.end();
-    });
+      console.log(`📥 Backfilled ${candles.length} candles for ${pair}`);
+      return candles;
+    } catch (error) {
+      console.error(`❌ Backfill failed for ${pair}:`, error.message);
+      return [];
+    }
   }
 
   async backfillAll(interval = '60') {
