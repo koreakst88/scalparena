@@ -15,7 +15,14 @@ const StatsCalculator = require('../analytics/stats');
 class ScalpArenaBot {
   constructor() {
     this.token = process.env.TELEGRAM_BOT_TOKEN;
-    this.bot = new TelegramBot(this.token, { polling: true });
+    const isProduction = process.env.NODE_ENV === 'production';
+
+    if (isProduction) {
+      this.bot = new TelegramBot(this.token, { webHook: false });
+    } else {
+      this.bot = new TelegramBot(this.token, { polling: true });
+    }
+
     this.db = new SupabaseClient();
     this.provider = new BybitDataProvider();
     this.analyzer = new GptAnalyzer();

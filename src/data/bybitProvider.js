@@ -79,7 +79,9 @@ class BybitDataProvider {
   async backfillCandles(pair, interval = '60', limit = 50) {
     try {
       const url = `https://${this.restBase}/v5/market/kline?category=linear&symbol=${pair}&interval=${interval}&limit=${limit}`;
+      console.log(`📡 Backfill URL: ${url}`);
       const response = await axios.get(url, { timeout: 10000 });
+      console.log(`📡 Backfill status ${pair}: ${response.status}`);
       const rawCandles = response.data?.result?.list || [];
 
       const candles = rawCandles.reverse().map((candle) => ({

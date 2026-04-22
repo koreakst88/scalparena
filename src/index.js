@@ -12,15 +12,41 @@ app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date() });
 });
 
-// Запустить бота
-if (process.env.TELEGRAM_BOT_TOKEN && process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
-  const bot = new ScalpArenaBot();
-  bot.start().catch(console.error);
-} else {
-  console.log('ℹ️ Bot startup skipped: missing TELEGRAM_BOT_TOKEN or Supabase env vars');
+let bot = null;
+
+async function main() {
+  if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
+    console.log('ℹ️ Bot startup skipped: missing TELEGRAM_BOT_TOKEN or Supabase env vars');
+    return;
+  }
+
+  bot = new ScalpArenaBot();
+  await bot.start();
+
+  if (process.env.NODE_ENV === 'production') {
+    const railwayUrl =
+      process.env.RAILWAY_STATIC_URL || process.env.RAILWAY_PUBLIC_DOMAIN;
+
+    if (railwayUrl) {
+      const webhookUrl = `https://${railwayUrl}/webhook`;
+
+      app.post('/webhook', (req, res) => {
+        bot.bot.processUpdate(req.body);
+        res.sendStatus(200);
+      });
+
+      await bot.bot.setWebHook(webhookUrl);
+      console.log(`✅ Webhook set: ${webhookUrl}`);
+    } else {
+      console.warn('⚠️  RAILWAY_PUBLIC_DOMAIN not set, falling back to polling');
+      await bot.bot.startPolling();
+    }
+  }
 }
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
 });
+
+main().catch(console.error);
