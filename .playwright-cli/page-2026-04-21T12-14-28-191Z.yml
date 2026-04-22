@@ -1,0 +1,47 @@
+- main [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: Исходный материал
+      - generic [ref=e6]: PDF page 23
+    - generic [ref=e7]:
+      - img "Source page preview" [ref=e8]
+      - generic [ref=e9]:
+        - generic [ref=e10]:
+          - generic [ref=e11]: Источник
+          - generic [ref=e12]: English Reader A1
+        - generic [ref=e13]:
+          - generic [ref=e14]: Страница
+          - generic [ref=e15]: "23"
+        - generic [ref=e16]:
+          - generic [ref=e17]: Блок
+          - generic [ref=e18]: page-23-block-4
+      - generic [ref=e19]: The girl is standing near the lake and looking at the mountains. She has a red backpack and a small camera.
+  - generic [ref=e20]:
+    - generic [ref=e21]:
+      - generic [ref=e22]:
+        - generic [ref=e23]: 23 / 100
+        - generic [ref=e24]: Обучение
+      - generic [ref=e25]: Пример страницы из исходного материала
+      - generic [ref=e26]:
+        - img "Card image" [ref=e28]
+        - generic [ref=e29]: The girl is standing near the lake and looking at the mountains.
+      - button "Показать перевод" [ref=e31] [cursor=pointer]
+      - generic [ref=e32]:
+        - button "← Назад" [ref=e33] [cursor=pointer]
+        - button "Вперёд →" [ref=e34] [cursor=pointer]
+    - generic [ref=e35]: "Ниже видно, как карточка собирается из исходного блока: изображение, оригинальный текст, перевод и служебные метаданные."
+    - generic [ref=e36]:
+      - strong [ref=e37]: "Как подтягивается карточка:"
+      - text: 1. Из источника приходит объект страницы/блока с полями
+      - code [ref=e38]: image
+      - text: ","
+      - code [ref=e39]: original
+      - text: ","
+      - code [ref=e40]: translation
+      - text: ","
+      - code [ref=e41]: page
+      - text: .
+      - text: 2. Изображение страницы рендерится в превью и в миниатюре карточки.
+      - text: 3. Оригинальный текст кладётся в строку карточки и в полный блок справа/слева.
+      - text: 4. Перевод скрыт до клика по кнопке, чтобы режим обучения оставался “активным”.
+      - text: 5. Кнопки навигации переключают текущий блок источника.

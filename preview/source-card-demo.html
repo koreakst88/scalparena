@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Source Card Demo</title>
+    <style>
+      :root {
+        --bg: #eef3f9;
+        --panel: rgba(255, 255, 255, 0.84);
+        --line: #d8e1ee;
+        --text: #1c2434;
+        --muted: #63708b;
+        --accent: #1f6fff;
+        --accent-soft: #e8f0ff;
+        --shadow: 0 24px 60px rgba(32, 51, 84, 0.12);
+        --radius-xl: 28px;
+        --radius-lg: 22px;
+        --radius-md: 18px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Inter", "Segoe UI", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(83, 134, 255, 0.18), transparent 25%),
+          radial-gradient(circle at top right, rgba(84, 210, 196, 0.16), transparent 22%),
+          linear-gradient(180deg, #f5f8fc 0%, #eaf1f8 100%);
+        min-height: 100vh;
+      }
+
+      .page {
+        width: min(1180px, calc(100vw - 32px));
+        margin: 32px auto;
+        display: grid;
+        grid-template-columns: 1.15fr 0.95fr;
+        gap: 24px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid rgba(216, 225, 238, 0.95);
+        border-radius: var(--radius-xl);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px);
+      }
+
+      .source-panel {
+        padding: 22px;
+      }
+
+      .source-toolbar,
+      .card-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .chip {
+        padding: 14px 22px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: linear-gradient(180deg, #ffffff 0%, #f4f7fb 100%);
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .source-preview {
+        margin-top: 18px;
+        padding: 18px;
+        border-radius: var(--radius-lg);
+        background: #f8fbff;
+        border: 1px solid var(--line);
+      }
+
+      .source-preview img {
+        width: 100%;
+        height: 360px;
+        object-fit: cover;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        display: block;
+      }
+
+      .source-meta {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin-top: 14px;
+      }
+
+      .meta-box {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 14px;
+      }
+
+      .meta-label {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+
+      .meta-value {
+        margin-top: 6px;
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .source-text {
+        margin-top: 14px;
+        padding: 18px;
+        border-radius: 18px;
+        background: #fff;
+        border: 1px solid var(--line);
+        line-height: 1.55;
+      }
+
+      .card-panel {
+        padding: 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+
+      .lesson-card {
+        padding: 18px;
+        border-radius: 32px;
+        border: 1px solid var(--line);
+        background: #fff;
+        box-shadow: 0 22px 48px rgba(31, 48, 82, 0.08);
+      }
+
+      .title-pill {
+        margin-top: 14px;
+        padding: 12px 18px;
+        min-height: 44px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: #f8fbff;
+        display: flex;
+        align-items: center;
+        font-size: 16px;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+
+      .preview-row {
+        margin-top: 18px;
+        display: grid;
+        grid-template-columns: 104px 1fr;
+        gap: 14px;
+        align-items: stretch;
+      }
+
+      .mini-image {
+        width: 104px;
+        height: 104px;
+        border-radius: 22px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        background: #f3f7fd;
+      }
+
+      .mini-image img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .excerpt {
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        padding: 16px;
+        background: #fbfdff;
+        line-height: 1.5;
+        color: #32405a;
+      }
+
+      .translation {
+        margin-top: 18px;
+        border: 1px dashed #bfd0ea;
+        border-radius: 22px;
+        padding: 18px;
+        background: var(--accent-soft);
+        color: #23417d;
+        display: none;
+      }
+
+      .translation.visible {
+        display: block;
+      }
+
+      .button {
+        width: 100%;
+        padding: 22px 24px;
+        border-radius: 26px;
+        border: 1px solid var(--line);
+        background: linear-gradient(180deg, #ffffff 0%, #f7faff 100%);
+        color: var(--text);
+        font-size: 18px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .button.primary {
+        background: linear-gradient(180deg, #2a73ff 0%, #145ee8 100%);
+        color: #fff;
+        border-color: rgba(20, 94, 232, 0.8);
+      }
+
+      .nav-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+
+      .hint {
+        font-size: 14px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .flow {
+        margin-top: 6px;
+        padding: 16px 18px;
+        border-radius: 18px;
+        background: #f7faff;
+        border: 1px solid var(--line);
+        font-size: 14px;
+        line-height: 1.55;
+        color: #33415e;
+      }
+
+      @media (max-width: 960px) {
+        .page {
+          grid-template-columns: 1fr;
+        }
+
+        .preview-row,
+        .source-meta {
+          grid-template-columns: 1fr;
+        }
+
+        .mini-image {
+          width: 100%;
+          height: 180px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="panel source-panel">
+        <div class="source-toolbar">
+          <div class="chip">Исходный материал</div>
+          <div class="chip" id="sourceTag">PDF page 23</div>
+        </div>
+
+        <div class="source-preview">
+          <img id="sourceImage" alt="Source page preview" />
+
+          <div class="source-meta">
+            <div class="meta-box">
+              <div class="meta-label">Источник</div>
+              <div class="meta-value" id="sourceName"></div>
+            </div>
+            <div class="meta-box">
+              <div class="meta-label">Страница</div>
+              <div class="meta-value" id="pageNumber"></div>
+            </div>
+            <div class="meta-box">
+              <div class="meta-label">Блок</div>
+              <div class="meta-value" id="blockId"></div>
+            </div>
+          </div>
+
+          <div class="source-text" id="originalText"></div>
+        </div>
+      </section>
+
+      <section class="panel card-panel">
+        <div class="lesson-card">
+          <div class="card-toolbar">
+            <div class="chip" id="progressValue">23 / 100</div>
+            <div class="chip">Обучение</div>
+          </div>
+
+          <div class="title-pill" id="cardTitle"></div>
+
+          <div class="preview-row">
+            <div class="mini-image">
+              <img id="cardImage" alt="Card image" />
+            </div>
+            <div class="excerpt" id="cardExcerpt"></div>
+          </div>
+
+          <div class="translation" id="translationBox"></div>
+
+          <div style="margin-top: 18px;">
+            <button class="button primary" id="toggleTranslation">Показать перевод</button>
+          </div>
+
+          <div class="nav-row" style="margin-top: 18px;">
+            <button class="button" id="prevButton">← Назад</button>
+            <button class="button" id="nextButton">Вперёд →</button>
+          </div>
+        </div>
+
+        <div class="hint">
+          Ниже видно, как карточка собирается из исходного блока: изображение, оригинальный текст, перевод и служебные метаданные.
+        </div>
+
+        <div class="flow" id="flowBox"></div>
+      </section>
+    </main>
+
+    <script>
+      const mockPages = [
+        {
+          progress: "23 / 100",
+          mode: "Обучение",
+          sourceName: "English Reader A1",
+          page: 23,
+          blockId: "page-23-block-4",
+          title: "Пример страницы из исходного материала",
+          original:
+            "The girl is standing near the lake and looking at the mountains. She has a red backpack and a small camera.",
+          translation:
+            "Девочка стоит у озера и смотрит на горы. У неё красный рюкзак и маленькая камера.",
+          excerpt:
+            "The girl is standing near the lake and looking at the mountains.",
+          image:
+            "data:image/svg+xml;utf8," +
+            encodeURIComponent(`
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720">
+                <defs>
+                  <linearGradient id="sky" x1="0" x2="0" y1="0" y2="1">
+                    <stop offset="0%" stop-color="#b7d8ff"/>
+                    <stop offset="100%" stop-color="#f2f8ff"/>
+                  </linearGradient>
+                </defs>
+                <rect width="1200" height="720" fill="url(#sky)"/>
+                <rect y="470" width="1200" height="250" fill="#6db2d3"/>
+                <polygon points="130,450 350,170 530,450" fill="#7e95b4"/>
+                <polygon points="350,450 620,120 860,450" fill="#657d9a"/>
+                <polygon points="760,450 980,210 1130,450" fill="#7d8fa9"/>
+                <circle cx="1030" cy="110" r="52" fill="#ffe598"/>
+                <rect x="0" y="540" width="1200" height="180" fill="#86b86d"/>
+                <circle cx="270" cy="520" r="34" fill="#4b7b47"/>
+                <circle cx="310" cy="500" r="42" fill="#629358"/>
+                <rect x="560" y="390" width="70" height="170" rx="18" fill="#28344a"/>
+                <circle cx="595" cy="330" r="44" fill="#f8c9a4"/>
+                <rect x="548" y="378" width="96" height="110" rx="24" fill="#d84c43"/>
+                <rect x="625" y="398" width="44" height="68" rx="10" fill="#2e405d"/>
+                <text x="65" y="95" font-size="44" font-family="Arial" fill="#1f2a3d">Source page preview</text>
+              </svg>
+            `),
+        },
+      ];
+
+      let currentIndex = 0;
+      let translationVisible = false;
+
+      const els = {
+        progressValue: document.getElementById("progressValue"),
+        sourceTag: document.getElementById("sourceTag"),
+        sourceName: document.getElementById("sourceName"),
+        pageNumber: document.getElementById("pageNumber"),
+        blockId: document.getElementById("blockId"),
+        sourceImage: document.getElementById("sourceImage"),
+        originalText: document.getElementById("originalText"),
+        cardTitle: document.getElementById("cardTitle"),
+        cardImage: document.getElementById("cardImage"),
+        cardExcerpt: document.getElementById("cardExcerpt"),
+        translationBox: document.getElementById("translationBox"),
+        toggleTranslation: document.getElementById("toggleTranslation"),
+        flowBox: document.getElementById("flowBox"),
+      };
+
+      function renderCard() {
+        const item = mockPages[currentIndex];
+
+        els.progressValue.textContent = item.progress;
+        els.sourceTag.textContent = `PDF page ${item.page}`;
+        els.sourceName.textContent = item.sourceName;
+        els.pageNumber.textContent = item.page;
+        els.blockId.textContent = item.blockId;
+        els.sourceImage.src = item.image;
+        els.originalText.textContent = item.original;
+        els.cardTitle.textContent = item.title;
+        els.cardImage.src = item.image;
+        els.cardExcerpt.textContent = item.excerpt;
+        els.translationBox.textContent = item.translation;
+        els.translationBox.classList.toggle("visible", translationVisible);
+        els.toggleTranslation.textContent = translationVisible ? "Скрыть перевод" : "Показать перевод";
+
+        els.flowBox.innerHTML = `
+          <strong>Как подтягивается карточка:</strong><br />
+          1. Из источника приходит объект страницы/блока с полями <code>image</code>, <code>original</code>, <code>translation</code>, <code>page</code>.<br />
+          2. Изображение страницы рендерится в превью и в миниатюре карточки.<br />
+          3. Оригинальный текст кладётся в строку карточки и в полный блок справа/слева.<br />
+          4. Перевод скрыт до клика по кнопке, чтобы режим обучения оставался “активным”.<br />
+          5. Кнопки навигации переключают текущий блок источника.
+        `;
+      }
+
+      document.getElementById("toggleTranslation").addEventListener("click", () => {
+        translationVisible = !translationVisible;
+        renderCard();
+      });
+
+      document.getElementById("prevButton").addEventListener("click", () => {
+        currentIndex = (currentIndex - 1 + mockPages.length) % mockPages.length;
+        translationVisible = false;
+        renderCard();
+      });
+
+      document.getElementById("nextButton").addEventListener("click", () => {
+        currentIndex = (currentIndex + 1) % mockPages.length;
+        translationVisible = false;
+        renderCard();
+      });
+
+      renderCard();
+    </script>
+  </body>
+</html>
