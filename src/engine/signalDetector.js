@@ -44,7 +44,7 @@ class SignalDetector {
    * @returns {Object|null} signal или null
    */
   static detectSignal(pair, candles) {
-    if (!candles || candles.length < 30) {
+    if (!candles || candles.length < 5) {
       return null;
     }
 
@@ -139,7 +139,7 @@ class SignalDetector {
     for (const pair of pairs) {
       const candles = provider.getCandles(pair, 50);
 
-      if (!provider.hasEnoughData(pair, 30)) {
+      if (!provider.hasEnoughData(pair, 5)) {
         continue;
       }
 

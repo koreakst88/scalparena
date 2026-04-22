@@ -26,9 +26,10 @@ class Scheduler {
     this.scanTimer = setInterval(() => this._autoScan(), SCAN_INTERVAL_MS);
     this._scheduleDailyReset();
 
-    setTimeout(() => this._autoScan(), 2 * 60 * 1000);
+    setTimeout(() => this._autoScan(), 5 * 60 * 1000);
 
     console.log('✅ Auto-scan every 15 min | Daily reset at 08:00 Seoul');
+    console.log('⏳ First auto-scan in 5 minutes (WS data accumulation)');
   }
 
   stop() {
@@ -182,7 +183,7 @@ class Scheduler {
 🛡️ Дневной лимит риска: *$${RiskManager.getDailyLimit(user.account_balance)}*
 📊 Макс позиций: *${RiskManager.getMaxPositions()}*
 
-🔍 Авто-скан запущен. Первый скан через 2 мин.
+🔍 Авто-скан запущен. Первый скан через 5 мин.
 /scan — запустить вручную
         `
         );

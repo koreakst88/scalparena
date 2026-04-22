@@ -28,6 +28,8 @@ const BUFFER_SIZE = 100;
 class BybitDataProvider {
   constructor() {
     this.isTestnet = process.env.BYBIT_TESTNET === 'true';
+    this.isProduction = process.env.NODE_ENV === 'production';
+    this.useRestBackfill = !this.isProduction;
     this.wsUrl = this.isTestnet
       ? 'wss://stream-testnet.bybit.com/v5/public/linear'
       : 'wss://stream.bybit.com/v5/public/linear';
@@ -50,6 +52,13 @@ class BybitDataProvider {
   // ─────────────────────────────────────────
 
   async validatePairs() {
+    if (!this.useRestBackfill) {
+      console.log('📋 Using static pairs list (REST blocked on this host)');
+      this.validPairs = [...TRADING_PAIRS];
+      console.log(`✅ Valid pairs: ${this.validPairs.length}`);
+      return this.validPairs;
+    }
+
     console.log('🔍 Validating pairs via REST...');
     try {
       const url = `https://${this.restBase}/v5/market/instruments-info?category=linear&limit=1000`;
@@ -106,6 +115,15 @@ class BybitDataProvider {
   }
 
   async backfillAll(interval = '60') {
+    if (!this.useRestBackfill) {
+      console.log('⚠️  REST backfill blocked by exchange (403)');
+      console.log('📡 Switching to WebSocket accumulation mode...');
+      console.log('⏳ First scan will start after 5 minutes (data accumulation)');
+      this.validPairs = this.validPairs.length > 0 ? this.validPairs : [...TRADING_PAIRS];
+      console.log('✅ Backfill skipped: will accumulate via WebSocket');
+      return;
+    }
+
     console.log(`\n📥 Starting backfill for ${this.validPairs.length} pairs...`);
 
     const batchSize = 3;
@@ -183,7 +201,8 @@ class BybitDataProvider {
   // ─────────────────────────────────────────
 
   _subscribe() {
-    const wsInterval = process.env.NODE_ENV === 'development' ? '1' : '60';
+    const wsInterval =
+      process.env.BYBIT_WS_INTERVAL || (this.useRestBackfill ? '1' : '1');
 
     const batchSize = 5;
     for (let i = 0; i < this.validPairs.length; i += batchSize) {
