@@ -51,10 +51,11 @@ class BybitDataProvider {
   // ─────────────────────────────────────────
 
   async validatePairs() {
+    const proxyUrl = process.env.SUPABASE_PROXY_URL;
+    const proxyHost = proxyUrl ? new URL(proxyUrl).hostname : 'NOT SET';
+    console.log(`🔧 validatePairs: proxyUrl=${proxyUrl ? 'SET' : 'NOT SET'} host=${proxyHost}`);
     console.log('🔍 Validating pairs via Supabase proxy...');
     try {
-      const proxyUrl = process.env.SUPABASE_PROXY_URL;
-
       if (!proxyUrl) {
         console.warn('⚠️  No proxy URL, using static list');
         this.validPairs = [...TRADING_PAIRS];
@@ -91,8 +92,11 @@ class BybitDataProvider {
   // ─────────────────────────────────────────
 
   async backfillCandles(pair, interval = '60', limit = 50) {
+    const proxyUrl = process.env.SUPABASE_PROXY_URL;
+    const proxyHost = proxyUrl ? new URL(proxyUrl).hostname : 'NOT SET';
+    console.log(`🔧 backfill ${pair}: proxyUrl=${proxyUrl ? 'SET' : 'NOT SET'} host=${proxyHost}`);
+
     try {
-      const proxyUrl = process.env.SUPABASE_PROXY_URL;
       let response;
 
       if (proxyUrl) {
