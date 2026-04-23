@@ -29,7 +29,6 @@ class BybitDataProvider {
   constructor() {
     this.isTestnet = process.env.BYBIT_TESTNET === 'true';
     this.isProduction = process.env.NODE_ENV === 'production';
-    this.useRestBackfill = !this.isProduction;
     this.wsUrl = this.isTestnet
       ? 'wss://stream-testnet.bybit.com/v5/public/linear'
       : 'wss://stream.bybit.com/v5/public/linear';
@@ -52,17 +51,23 @@ class BybitDataProvider {
   // ─────────────────────────────────────────
 
   async validatePairs() {
-    if (!this.useRestBackfill) {
-      console.log('📋 Using static pairs list (REST blocked on this host)');
-      this.validPairs = [...TRADING_PAIRS];
-      console.log(`✅ Valid pairs: ${this.validPairs.length}`);
-      return this.validPairs;
-    }
-
-    console.log('🔍 Validating pairs via REST...');
+    console.log('🔍 Validating pairs via Supabase proxy...');
     try {
-      const url = `https://${this.restBase}/v5/market/instruments-info?category=linear&limit=1000`;
-      const response = await axios.get(url, { timeout: 10000 });
+      const proxyUrl = process.env.SUPABASE_PROXY_URL;
+
+      if (!proxyUrl) {
+        console.warn('⚠️  No proxy URL, using static list');
+        this.validPairs = [...TRADING_PAIRS];
+        return this.validPairs;
+      }
+
+      const url = `${proxyUrl}?path=/v5/market/instruments-info&params=category%3Dlinear%26limit%3D1000`;
+      const response = await axios.get(url, {
+        timeout: 15000,
+        headers: {
+          apikey: process.env.SUPABASE_KEY,
+        },
+      });
       const available = response.data?.result?.list?.map((instrument) => instrument.symbol) || [];
 
       this.validPairs = TRADING_PAIRS.filter((pair) => {
@@ -87,10 +92,23 @@ class BybitDataProvider {
 
   async backfillCandles(pair, interval = '60', limit = 50) {
     try {
-      const url = `https://${this.restBase}/v5/market/kline?category=linear&symbol=${pair}&interval=${interval}&limit=${limit}`;
-      console.log(`📡 Backfill URL: ${url}`);
-      const response = await axios.get(url, { timeout: 10000 });
-      console.log(`📡 Backfill status ${pair}: ${response.status}`);
+      const proxyUrl = process.env.SUPABASE_PROXY_URL;
+      let response;
+
+      if (proxyUrl) {
+        const params = encodeURIComponent(
+          `category=linear&symbol=${pair}&interval=${interval}&limit=${limit}`
+        );
+        const url = `${proxyUrl}?path=/v5/market/kline&params=${params}`;
+        response = await axios.get(url, {
+          timeout: 15000,
+          headers: { apikey: process.env.SUPABASE_KEY },
+        });
+      } else {
+        const url = `https://${this.restBase}/v5/market/kline?category=linear&symbol=${pair}&interval=${interval}&limit=${limit}`;
+        response = await axios.get(url, { timeout: 10000 });
+      }
+
       const rawCandles = response.data?.result?.list || [];
 
       const candles = rawCandles.reverse().map((candle) => ({
@@ -106,7 +124,9 @@ class BybitDataProvider {
       if (!this.candleBuffer[pair]) this.candleBuffer[pair] = [];
       this.candleBuffer[pair] = candles;
 
-      console.log(`📥 Backfilled ${candles.length} candles for ${pair}`);
+      if (candles.length > 0) {
+        console.log(`📥 Backfilled ${candles.length} candles for ${pair}`);
+      }
       return candles;
     } catch (error) {
       console.error(`❌ Backfill failed for ${pair}:`, error.message);
@@ -115,15 +135,6 @@ class BybitDataProvider {
   }
 
   async backfillAll(interval = '60') {
-    if (!this.useRestBackfill) {
-      console.log('⚠️  REST backfill blocked by exchange (403)');
-      console.log('📡 Switching to WebSocket accumulation mode...');
-      console.log('⏳ First scan will start after 5 minutes (data accumulation)');
-      this.validPairs = this.validPairs.length > 0 ? this.validPairs : [...TRADING_PAIRS];
-      console.log('✅ Backfill skipped: will accumulate via WebSocket');
-      return;
-    }
-
     console.log(`\n📥 Starting backfill for ${this.validPairs.length} pairs...`);
 
     const batchSize = 3;
@@ -136,7 +147,9 @@ class BybitDataProvider {
       }
     }
 
-    const filled = Object.keys(this.candleBuffer).length;
+    const filled = Object.keys(this.candleBuffer).filter(
+      (pair) => (this.candleBuffer[pair] || []).length > 0
+    ).length;
     console.log(`✅ Backfill complete: ${filled} pairs ready\n`);
   }
 
@@ -201,8 +214,7 @@ class BybitDataProvider {
   // ─────────────────────────────────────────
 
   _subscribe() {
-    const wsInterval =
-      process.env.BYBIT_WS_INTERVAL || (this.useRestBackfill ? '1' : '1');
+    const wsInterval = process.env.BYBIT_WS_INTERVAL || '1';
 
     const batchSize = 5;
     for (let i = 0; i < this.validPairs.length; i += batchSize) {
