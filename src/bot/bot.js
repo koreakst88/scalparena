@@ -141,16 +141,37 @@ class ScalpArenaBot {
     const accountBalance = user?.account_balance || 200;
 
     if (signals.length === 0) {
+      const pairs = this.provider.getPairs().slice(0, 5);
+      const TechnicalIndicators = require('../engine/indicators');
+      let diagnostics = '';
+
+      for (const pair of pairs) {
+        const candles = this.provider.getCandles(pair, 50);
+        if (candles.length < 5) {
+          diagnostics += `  ${pair}: нет данных\n`;
+          continue;
+        }
+
+        const prices = candles.map((candle) => candle.close);
+        const current = candles[candles.length - 1];
+        const impulse = (((current.close - current.open) / current.open) * 100).toFixed(1);
+        const rsi = TechnicalIndicators.calculateRSI(prices, 14).toFixed(0);
+        const volume = TechnicalIndicators.calculateVolumeProfile(candles, 20).toFixed(0);
+        const direction = impulse > 0 ? '📈' : '📉';
+        diagnostics += `  ${direction} ${pair}: ${impulse}% | RSI ${rsi} | Vol ${volume}%\n`;
+      }
+
       return this._send(
         userId,
         `
 📭 *Сигналов не найдено*
 
-Рынок спокойный — это нормально.
-Система ищет импульсы 10-20% с подтверждением объёма.
+Рынок сейчас не даёт чётких импульсов.
+Система ищет движения 2.5-15% с подтверждением RSI и объёма.
 
-Попробуй позже или дождись волатильности.
-/help — справка по командам
+📊 *Топ 5 пар сейчас:*
+${diagnostics}
+⏰ Авто-скан каждые 15 мин — пришлю алерт когда будет сигнал.
       `
       );
     }
