@@ -104,10 +104,12 @@ class BybitDataProvider {
           `category=linear&symbol=${pair}&interval=${interval}&limit=${limit}`
         );
         const url = `${proxyUrl}?path=/v5/market/kline&params=${params}`;
+        console.log(`📡 Requesting: ${url}`);
         response = await axios.get(url, {
           timeout: 15000,
           headers: { 'Content-Type': 'application/json' },
         });
+        console.log(`✅ Response ${pair}: status=${response.status}`);
       } else {
         const url = `https://${this.restBase}/v5/market/kline?category=linear&symbol=${pair}&interval=${interval}&limit=${limit}`;
         response = await axios.get(url, { timeout: 10000 });
@@ -134,6 +136,10 @@ class BybitDataProvider {
       return candles;
     } catch (error) {
       console.error(`❌ Backfill failed for ${pair}:`, error.message);
+      if (error.response) {
+        console.error(`   Status: ${error.response.status}`);
+        console.error(`   Data: ${JSON.stringify(error.response.data).substring(0, 200)}`);
+      }
       return [];
     }
   }
