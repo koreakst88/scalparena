@@ -24,6 +24,10 @@ const TRADING_PAIRS = [
 const RECONNECT_DELAY = 5000;
 const PING_INTERVAL = 20000;
 const BUFFER_SIZE = 100;
+const COINGECKO_OHLC_DAYS = '1';
+const COINGECKO_REQUEST_DELAY_MS = 2500;
+const COINGECKO_RETRY_DELAY_MS = 30000;
+const COINGECKO_MAX_RETRIES = 2;
 
 class BybitDataProvider {
   constructor() {
@@ -46,100 +50,45 @@ class BybitDataProvider {
     console.log(`✅ BybitDataProvider initialized (${this.isTestnet ? 'TESTNET' : 'MAINNET'})`);
   }
 
-  // ─────────────────────────────────────────
-  // STEP 1: VALIDATE PAIRS VIA REST
-  // ─────────────────────────────────────────
-
   async validatePairs() {
-    const proxyUrl = process.env.SUPABASE_PROXY_URL;
-    const proxyHost = proxyUrl ? new URL(proxyUrl).hostname : 'NOT SET';
-    console.log(`🔧 validatePairs: proxyUrl=${proxyUrl ? 'SET' : 'NOT SET'} host=${proxyHost}`);
-    console.log('🔍 Validating pairs via Supabase proxy...');
-    try {
-      if (!proxyUrl) {
-        console.warn('⚠️  No proxy URL, using static list');
-        this.validPairs = [...TRADING_PAIRS];
-        return this.validPairs;
-      }
-
-      const url = `${proxyUrl}?path=/v5/market/instruments-info&params=category%3Dlinear%26limit%3D1000`;
-      const response = await axios.get(url, {
-        timeout: 15000,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-      const available = response.data?.result?.list?.map((instrument) => instrument.symbol) || [];
-
-      this.validPairs = TRADING_PAIRS.filter((pair) => {
-        const isValid = available.includes(pair);
-        if (!isValid) console.warn(`⚠️  Pair NOT found: ${pair}`);
-        return isValid;
-      });
-
-      console.log(`✅ Valid pairs: ${this.validPairs.length}/${TRADING_PAIRS.length}`);
-      console.log(`   ${this.validPairs.join(', ')}`);
-      return this.validPairs;
-    } catch (error) {
-      console.error('❌ validatePairs failed:', error.message);
-      this.validPairs = [...TRADING_PAIRS];
-      return this.validPairs;
-    }
+    console.log('📋 Using static pairs list');
+    this.validPairs = [...TRADING_PAIRS];
+    console.log(`✅ Valid pairs: ${this.validPairs.length}`);
+    return this.validPairs;
   }
 
   // ─────────────────────────────────────────
-  // STEP 2: REST BACKFILL
+  // STEP 2: COINGECKO BACKFILL
   // ─────────────────────────────────────────
 
   async backfillCandles(pair, interval = '60', limit = 50) {
-    const proxyUrl = process.env.SUPABASE_PROXY_URL;
-    const proxyHost = proxyUrl ? new URL(proxyUrl).hostname : 'NOT SET';
-    console.log(`🔧 backfill ${pair}: proxyUrl=${proxyUrl ? 'SET' : 'NOT SET'} host=${proxyHost}`);
-
     try {
-      let response;
-
-      if (proxyUrl) {
-        const params = encodeURIComponent(
-          `category=linear&symbol=${pair}&interval=${interval}&limit=${limit}`
-        );
-        const url = `${proxyUrl}?path=/v5/market/kline&params=${params}`;
-        console.log(`📡 Requesting: ${url}`);
-        response = await axios.get(url, {
-          timeout: 15000,
-          headers: { 'Content-Type': 'application/json' },
-        });
-        console.log(`✅ Response ${pair}: status=${response.status}`);
-      } else {
-        const url = `https://${this.restBase}/v5/market/kline?category=linear&symbol=${pair}&interval=${interval}&limit=${limit}`;
-        response = await axios.get(url, { timeout: 10000 });
+      const coinId = this._getCoinGeckoId(pair);
+      if (!coinId) {
+        console.warn(`⚠️  No CoinGecko mapping for ${pair}`);
+        return [];
       }
 
-      const rawCandles = response.data?.result?.list || [];
+      const url = `https://api.coingecko.com/api/v3/coins/${coinId}/ohlc?vs_currency=usd&days=${COINGECKO_OHLC_DAYS}`;
+      const response = await this._requestCoinGecko(url, pair);
 
-      const candles = rawCandles.reverse().map((candle) => ({
-        timestamp: parseInt(candle[0], 10),
-        open: parseFloat(candle[1]),
-        high: parseFloat(candle[2]),
-        low: parseFloat(candle[3]),
-        close: parseFloat(candle[4]),
-        volume: parseFloat(candle[5]),
+      const candles = response.data.map((candle) => ({
+        timestamp: candle[0],
+        open: candle[1],
+        high: candle[2],
+        low: candle[3],
+        close: candle[4],
+        volume: 0,
         confirm: true,
       }));
 
       if (!this.candleBuffer[pair]) this.candleBuffer[pair] = [];
-      this.candleBuffer[pair] = candles;
+      this.candleBuffer[pair] = candles.slice(-limit);
 
-      if (candles.length > 0) {
-        console.log(`📥 Backfilled ${candles.length} candles for ${pair}`);
-      }
+      console.log(`📥 Backfilled ${candles.length} candles for ${pair} (CoinGecko)`);
       return candles;
     } catch (error) {
       console.error(`❌ Backfill failed for ${pair}:`, error.message);
-      if (error.response) {
-        console.error(`   Status: ${error.response.status}`);
-        console.error(`   Data: ${JSON.stringify(error.response.data).substring(0, 200)}`);
-      }
       return [];
     }
   }
@@ -147,13 +96,11 @@ class BybitDataProvider {
   async backfillAll(interval = '60') {
     console.log(`\n📥 Starting backfill for ${this.validPairs.length} pairs...`);
 
-    const batchSize = 3;
-    for (let i = 0; i < this.validPairs.length; i += batchSize) {
-      const batch = this.validPairs.slice(i, i + batchSize);
-      await Promise.all(batch.map((pair) => this.backfillCandles(pair, interval)));
+    for (let i = 0; i < this.validPairs.length; i += 1) {
+      await this.backfillCandles(this.validPairs[i], interval);
 
-      if (i + batchSize < this.validPairs.length) {
-        await new Promise((resolve) => setTimeout(resolve, 300));
+      if (i + 1 < this.validPairs.length) {
+        await this._sleep(COINGECKO_REQUEST_DELAY_MS);
       }
     }
 
@@ -161,6 +108,48 @@ class BybitDataProvider {
       (pair) => (this.candleBuffer[pair] || []).length > 0
     ).length;
     console.log(`✅ Backfill complete: ${filled} pairs ready\n`);
+  }
+
+  _getCoinGeckoId(pair) {
+    const map = {
+      BTCUSDT: 'bitcoin',
+      ETHUSDT: 'ethereum',
+      SOLUSDT: 'solana',
+      XRPUSDT: 'ripple',
+      DOGEUSDT: 'dogecoin',
+      AVAXUSDT: 'avalanche-2',
+      NEARUSDT: 'near',
+      RENDERUSDT: 'render-token',
+      '1000PEPEUSDT': 'pepe',
+      SHIB1000USDT: 'shiba-inu',
+      JUPUSDT: 'jupiter-exchange-solana',
+      WIFUSDT: 'dogwifcoin',
+      OPUSDT: 'optimism',
+      ARBUSDT: 'arbitrum',
+      TRUMPUSDT: 'official-trump',
+    };
+
+    return map[pair] || null;
+  }
+
+  async _requestCoinGecko(url, pair) {
+    for (let attempt = 0; attempt <= COINGECKO_MAX_RETRIES; attempt += 1) {
+      try {
+        return await axios.get(url, { timeout: 15000 });
+      } catch (error) {
+        if (error.response?.status !== 429 || attempt === COINGECKO_MAX_RETRIES) {
+          throw error;
+        }
+
+        const delay = COINGECKO_RETRY_DELAY_MS * (attempt + 1);
+        console.warn(`⚠️  CoinGecko rate limit for ${pair}, retrying in ${delay / 1000}s...`);
+        await this._sleep(delay);
+      }
+    }
+  }
+
+  _sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   // ─────────────────────────────────────────
