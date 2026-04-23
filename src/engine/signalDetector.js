@@ -9,15 +9,15 @@ const TechnicalIndicators = require('./indicators');
  * LONG: рынок упал → ждём отскок вверх
  */
 
-const MIN_IMPULSE = 2.5;
-const MAX_IMPULSE = 15;
-const MIN_RETRACE = 0.5;
-const MIN_VOLUME = 105;
-const RSI_SHORT = 65;
-const RSI_LONG = 35;
-const RSI_STRONG_S = 70;
-const RSI_STRONG_L = 30;
-const MIN_RR = 1.1;
+const MIN_IMPULSE = 1.5;
+const MAX_IMPULSE = 20;
+const MIN_RETRACE = 0.3;
+const MIN_VOLUME = 102;
+const RSI_SHORT = 60;
+const RSI_LONG = 40;
+const RSI_STRONG_S = 65;
+const RSI_STRONG_L = 35;
+const MIN_RR = 1.0;
 
 const ATR_THRESHOLDS = [
   { maxAtr: 1, minImpulse: 1.5 },
