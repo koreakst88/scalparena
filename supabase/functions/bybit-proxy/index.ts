@@ -1,5 +1,3 @@
-// supabase/functions/bybit-proxy/index.ts
-
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 
 const BYBIT_BASE = 'https://api.bybit.com';
@@ -32,19 +30,34 @@ serve(async (req) => {
     const response = await fetch(bybitUrl, {
       method: 'GET',
       headers: {
+        Accept: 'application/json',
         'Content-Type': 'application/json',
-        'User-Agent': 'ScalpArena/1.0',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
       },
     });
 
-    const data = await response.json();
+    const text = await response.text();
+    console.log('Response status:', response.status);
+    console.log('Response preview:', text.substring(0, 100));
+
+    if (text.startsWith('<') || text.startsWith('<!')) {
+      console.error('Got HTML instead of JSON - blocked by Cloudflare');
+      return new Response(
+        JSON.stringify({ error: 'Blocked by CDN', raw: text.substring(0, 200) }),
+        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const data = JSON.parse(text);
 
     return new Response(JSON.stringify(data), {
-      status: response.status,
+      status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error('Proxy error:', error);
+    console.error('Proxy error:', error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
