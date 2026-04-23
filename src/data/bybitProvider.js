@@ -66,7 +66,7 @@ class BybitDataProvider {
       const response = await axios.get(url, {
         timeout: 15000,
         headers: {
-          apikey: process.env.SUPABASE_KEY,
+          'Content-Type': 'application/json',
         },
       });
       const available = response.data?.result?.list?.map((instrument) => instrument.symbol) || [];
@@ -106,7 +106,7 @@ class BybitDataProvider {
         const url = `${proxyUrl}?path=/v5/market/kline&params=${params}`;
         response = await axios.get(url, {
           timeout: 15000,
-          headers: { apikey: process.env.SUPABASE_KEY },
+          headers: { 'Content-Type': 'application/json' },
         });
       } else {
         const url = `https://${this.restBase}/v5/market/kline?category=linear&symbol=${pair}&interval=${interval}&limit=${limit}`;
