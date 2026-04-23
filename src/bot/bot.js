@@ -171,7 +171,7 @@ class ScalpArenaBot {
 🎯 *СИГНАЛ #${i + 1}*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-📊 *${signal.pair}* SHORT
+📊 *${signal.pair}* ${signal.type === 'SHORT' ? '🔴 SHORT' : '🟢 LONG'}
 
 💰 Цена входа: \`$${signal.entryPrice}\`
 📈 Импульс: *${signal.impulse}%*
@@ -198,7 +198,7 @@ RSI: *${signal.rsi}*
               [
                 {
                   text: '🟢 Я открыл позицию',
-                  callback_data: `open_${signal.pair}_${signal.entryPrice}_${signal.stopLoss}_${signal.takeProfit}`,
+                  callback_data: `open_${signal.type}_${signal.pair}_${signal.entryPrice}_${signal.stopLoss}_${signal.takeProfit}`,
                 },
                 {
                   text: '⏭️ Пропустить',
@@ -273,10 +273,12 @@ RSI: *${signal.rsi}*
     for (const position of positions) {
       const current = this.provider.getCurrentCandle(position.pair);
       const currentPrice = current?.close || position.entry_price;
+      const directionMultiplier = position.trade_type === 'LONG' ? 1 : -1;
       const pnl = (
-        ((position.entry_price - currentPrice) / position.entry_price) *
+        ((currentPrice - position.entry_price) / position.entry_price) *
         position.entry_size *
-        position.leverage
+        position.leverage *
+        directionMultiplier
       ).toFixed(2);
       const pnlIcon = pnl >= 0 ? '✅' : '❌';
 
@@ -286,7 +288,7 @@ RSI: *${signal.rsi}*
 🔥 *АКТИВНАЯ ПОЗИЦИЯ*
 ════════════════════════════════
 
-*${position.pair}* SHORT
+*${position.pair}* ${position.trade_type || 'SHORT'}
 Entry: \`$${position.entry_price}\`
 Current: \`$${currentPrice}\`
 
@@ -317,11 +319,13 @@ Current: \`$${currentPrice}\`
 
     // Закрыть первую открытую позицию
     const position = positions[0];
+    const directionMultiplier = position.trade_type === 'LONG' ? 1 : -1;
     const pnl = parseFloat(
       (
-        ((position.entry_price - exitPrice) / position.entry_price) *
+        ((exitPrice - position.entry_price) / position.entry_price) *
         position.entry_size *
-        position.leverage
+        position.leverage *
+        directionMultiplier
       ).toFixed(4)
     );
     const netPnl = parseFloat((pnl - position.entry_size * 0.002).toFixed(4));
@@ -346,7 +350,7 @@ Current: \`$${currentPrice}\`
 ${icon} *СДЕЛКА ЗАКРЫТА*
 ════════════════════════════════
 
-*${position.pair}* SHORT
+*${position.pair}* ${position.trade_type || 'SHORT'}
 Entry: \`$${position.entry_price}\`
 Exit:  \`$${exitPrice}\`
 
@@ -458,7 +462,7 @@ ${insights}
 ════════════════════════════════
 💡 *Типичный день:*
 1️⃣ /scan → выбрать сигнал
-2️⃣ Открыть SHORT на Bybit вручную
+2️⃣ Открыть LONG/SHORT на Bybit вручную
 3️⃣ Нажать \`Я открыл позицию\`
 4️⃣ /exit цена → когда закроешь
 5️⃣ /stats → анализ дня
@@ -478,17 +482,19 @@ ${insights}
 
     if (data.startsWith('open_')) {
       const parts = data.split('_');
-      const pair = parts[1];
-      const entryPrice = parseFloat(parts[2]);
-      const stopLoss = parseFloat(parts[3]);
-      const takeProfit = parseFloat(parts[4]);
+      const hasDirection = parts[1] === 'LONG' || parts[1] === 'SHORT';
+      const direction = hasDirection ? parts[1] : 'SHORT';
+      const pair = hasDirection ? parts[2] : parts[1];
+      const entryPrice = parseFloat(hasDirection ? parts[3] : parts[2]);
+      const stopLoss = parseFloat(hasDirection ? parts[4] : parts[3]);
+      const takeProfit = parseFloat(hasDirection ? parts[5] : parts[4]);
 
       const user = await this.db.getUser(userId);
 
       // Залогировать сделку
       await this.db.logTrade(userId, {
         pair,
-        trade_type: 'SHORT',
+        trade_type: direction,
         entry_price: entryPrice,
         entry_time: new Date(),
         entry_size: user ? RiskManager.getMargin(user.account_balance) : 10,
@@ -505,7 +511,7 @@ ${insights}
 ✅ *ПОЗИЦИЯ ЗАЛОГИРОВАНА*
 ════════════════════════════════
 
-*${pair}* SHORT
+*${pair}* ${direction}
 Entry: \`$${entryPrice}\`
 🛑 SL: \`$${stopLoss}\`
 🟢 TP: \`$${takeProfit}\`
@@ -529,11 +535,13 @@ Entry: \`$${entryPrice}\`
         .single();
 
       if (trade && trade.status === 'OPEN') {
+        const directionMultiplier = trade.trade_type === 'LONG' ? 1 : -1;
         const pnl = parseFloat(
           (
-            ((trade.entry_price - price) / trade.entry_price) *
+            ((price - trade.entry_price) / trade.entry_price) *
             trade.entry_size *
-            trade.leverage
+            trade.leverage *
+            directionMultiplier
           ).toFixed(4)
         );
         const netPnl = parseFloat((pnl - trade.entry_size * 0.002).toFixed(4));

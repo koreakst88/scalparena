@@ -3,141 +3,128 @@
 const TechnicalIndicators = require('./indicators');
 
 /**
- * Dynamic Momentum Scalping Strategy - ADAPTIVE MODE
+ * Dynamic Momentum Scalping - BIDIRECTIONAL MODE
  *
- * Оптимизирован под рынок 2026:
- * - Импульсы 2-5% вместо 10-20%
- * - Адаптивный TP (0.5% / 1%)
- * - Динамический SL (0.3% - 1%)
- * - Альтернативный триггер: сильный импульс + экстремальный RSI
+ * SHORT: рынок вырос → ждём откат вниз
+ * LONG: рынок упал → ждём отскок вверх
  */
 
-// ─────────────────────────────────────────
-// CONSTANTS (ADAPTIVE)
-// ─────────────────────────────────────────
+const MIN_IMPULSE = 2.5;
+const MAX_IMPULSE = 15;
+const MIN_RETRACE = 0.5;
+const MIN_VOLUME = 105;
+const RSI_SHORT = 65;
+const RSI_LONG = 35;
+const RSI_STRONG_S = 70;
+const RSI_STRONG_L = 30;
+const MIN_RR = 1.1;
 
-const MIN_IMPULSE = 2.5;   // минимальный импульс %
-const MAX_IMPULSE = 15;    // максимальный импульс %
-const MIN_RETRACE = 0.5;   // минимальный откат от high %
-const MIN_VOLUME  = 105;   // минимальный volume spike %
-const RSI_ENTRY   = 65;    // RSI порог для стандартного входа
-const RSI_STRONG  = 70;    // RSI порог для агрессивного входа
-const RSI_EXIT    = 75;    // RSI порог для выхода
-
-// Адаптивный порог импульса по ATR
 const ATR_THRESHOLDS = [
-  { maxAtr: 1,        minImpulse: 1.5 },
-  { maxAtr: 2,        minImpulse: 2.5 },
-  { maxAtr: 4,        minImpulse: 4   },
-  { maxAtr: 7,        minImpulse: 6   },
-  { maxAtr: Infinity, minImpulse: 10  }
+  { maxAtr: 1, minImpulse: 1.5 },
+  { maxAtr: 2, minImpulse: 2.5 },
+  { maxAtr: 4, minImpulse: 4 },
+  { maxAtr: 7, minImpulse: 6 },
+  { maxAtr: Infinity, minImpulse: 10 },
 ];
 
-// Динамический Stop Loss (уже на низком ATR)
 const SL_TIERS = [
-  { maxAtr: 1,        slPercent: 0.003  }, // 0.3%
-  { maxAtr: 2,        slPercent: 0.005  }, // 0.5%
-  { maxAtr: 5,        slPercent: 0.0075 }, // 0.75%
-  { maxAtr: Infinity, slPercent: 0.01   }  // 1.0%
+  { maxAtr: 1, slPercent: 0.003 },
+  { maxAtr: 2, slPercent: 0.005 },
+  { maxAtr: 5, slPercent: 0.0075 },
+  { maxAtr: Infinity, slPercent: 0.01 },
 ];
-
-// ─────────────────────────────────────────
-// MAIN SIGNAL DETECTOR
-// ─────────────────────────────────────────
 
 class SignalDetector {
-
-  /**
-   * Сканировать одну пару и вернуть сигнал или null
-   */
   static detectSignal(pair, candles) {
-    if (!candles || candles.length < 5) {
-      return null;
-    }
+    if (!candles || candles.length < 5) return null;
 
     const current = candles[candles.length - 1];
-    const prices  = candles.map(c => c.close);
-
-    // Индикаторы
-    const atr        = TechnicalIndicators.calculateATR(candles, 14);
-    const rsi        = TechnicalIndicators.calculateRSI(prices, 14);
-    const volume     = TechnicalIndicators.calculateVolumeProfile(candles, 20);
+    const prices = candles.map((candle) => candle.close);
+    const atrPeriod = Math.min(14, Math.max(candles.length - 1, 1));
+    const rsiPeriod = Math.min(14, Math.max(prices.length - 1, 2));
+    const volumePeriod = Math.min(20, Math.max(candles.length, 2));
+    const atr = TechnicalIndicators.calculateATR(candles, atrPeriod);
+    const rsi = TechnicalIndicators.calculateRSI(prices, rsiPeriod);
+    const volume = TechnicalIndicators.calculateVolumeProfile(candles, volumePeriod);
     const atrPercent = (atr / current.close) * 100;
-
-    // Импульс часовой свечи
-    const hourOpen     = current.open;
-    const hourHigh     = current.high;
-    const currentPrice = current.close;
-    const impulse      = ((currentPrice - hourOpen) / hourOpen) * 100;
-    const retrace      = ((hourHigh - currentPrice) / hourHigh) * 100;
-
-    // Динамический порог
     const threshold = this._getDynamicThreshold(atrPercent);
 
-    // Проверка условий
+    const hourOpen = current.open;
+    const hourHigh = current.high;
+    const hourLow = current.low;
+    const currentPrice = current.close;
+    const impulse = ((currentPrice - hourOpen) / hourOpen) * 100;
+
+    const direction = this._getDirection(impulse, rsi, threshold);
+    if (!direction) return null;
+
     const checks = this._runChecks({
       impulse,
-      retrace,
       rsi,
       volume,
       threshold,
-      atrPercent
+      direction,
+      hourHigh,
+      hourLow,
+      currentPrice,
     });
 
     if (!checks.passed) return null;
 
-    // Расчёт SL и адаптивного TP
-    const stopLoss   = this._calculateStopLoss(hourHigh, atrPercent);
-    const tpPercent  = this._getTpPercent(impulse);
-    const takeProfit = parseFloat((currentPrice * (1 - tpPercent)).toFixed(8));
+    const slPercent = this._getSlPercent(atrPercent);
+    const tpPercent = this._getTpPercent(impulse);
 
-    // RR проверка после расчёта TP
-    const slDistance = Math.abs(stopLoss - currentPrice);
-    const tpDistance = Math.abs(currentPrice - takeProfit);
-    const riskReward = parseFloat((tpDistance / slDistance).toFixed(2));
+    let stopLoss;
+    let takeProfit;
 
-    // Дополнительная проверка RR (порог 1.1 для адаптивного режима)
-    if (riskReward < 1.1) return null;
+    if (direction === 'SHORT') {
+      stopLoss = parseFloat((hourHigh * (1 + slPercent)).toFixed(8));
+      takeProfit = parseFloat((currentPrice * (1 - tpPercent)).toFixed(8));
+    } else {
+      stopLoss = parseFloat((hourLow * (1 - slPercent)).toFixed(8));
+      takeProfit = parseFloat((currentPrice * (1 + tpPercent)).toFixed(8));
+    }
 
-    // Confidence score
-    const confidence = this._calculateConfidence(impulse, rsi, volume, atrPercent);
+    const slDist = Math.abs(currentPrice - stopLoss);
+    const tpDist = Math.abs(currentPrice - takeProfit);
+    const riskReward = parseFloat((tpDist / slDist).toFixed(2));
+    if (riskReward < MIN_RR) return null;
+
+    const confidence = this._calculateConfidence(impulse, rsi, volume, atrPercent, direction);
 
     return {
       pair,
-      type:       'SHORT',
+      type: direction,
       entryPrice: currentPrice,
       hourHigh,
+      hourLow,
       hourOpen,
 
       stopLoss,
       takeProfit,
-      tpPercent:  parseFloat((tpPercent * 100).toFixed(2)),
+      tpPercent: parseFloat((tpPercent * 100).toFixed(2)),
       riskReward,
-      maxRisk:    null,
+      maxRisk: null,
 
-      impulse:      parseFloat(impulse.toFixed(2)),
-      retrace:      parseFloat(retrace.toFixed(2)),
-      rsi:          parseFloat(rsi.toFixed(2)),
-      volume:       parseFloat(volume.toFixed(2)),
-      atr:          parseFloat(atr.toFixed(6)),
-      atrPercent:   parseFloat(atrPercent.toFixed(2)),
+      impulse: parseFloat(impulse.toFixed(2)),
+      rsi: parseFloat(rsi.toFixed(2)),
+      volume: parseFloat(volume.toFixed(2)),
+      atr: parseFloat(atr.toFixed(6)),
+      atrPercent: parseFloat(atrPercent.toFixed(2)),
 
       confidence,
       checks,
-      entryMode:    checks.strong_momentum_entry ? 'STRONG' : 'STANDARD',
+      entryMode: checks.strong_entry ? 'STRONG' : 'STANDARD',
 
       generatedAt: new Date(),
-      expiresAt:   new Date(Date.now() + 30 * 60 * 1000),
-      status:      'ACTIVE'
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+      status: 'ACTIVE',
     };
   }
 
-  /**
-   * Сканировать все пары
-   */
   static scanAll(provider) {
     const signals = [];
-    const pairs   = provider.getPairs();
+    const pairs = provider.getPairs();
 
     for (const pair of pairs) {
       const candles = provider.getCandles(pair, 50);
@@ -151,115 +138,109 @@ class SignalDetector {
     return signals;
   }
 
-  // ─────────────────────────────────────────
-  // HELPERS
-  // ─────────────────────────────────────────
+  static _getDirection(impulse, rsi, threshold) {
+    const absImpulse = Math.abs(impulse);
 
-  /**
-   * Проверить условия входа (два варианта: стандартный и сильный)
-   */
-  static _runChecks({ impulse, retrace, rsi, volume, threshold, atrPercent }) {
-    // СТАНДАРТНЫЙ вход: импульс + откат
-    const standardEntry =
-      Math.abs(impulse) >= threshold &&
-      retrace >= MIN_RETRACE &&
-      rsi >= RSI_ENTRY &&
-      volume >= MIN_VOLUME;
+    if (absImpulse < MIN_IMPULSE || absImpulse > MAX_IMPULSE) return null;
 
-    // СИЛЬНЫЙ вход: высокий импульс + экстремальный RSI (без отката)
-    const strongMomentumEntry =
-      Math.abs(impulse) >= 5 &&
-      rsi >= RSI_STRONG &&
-      volume >= 120;
+    if (impulse > threshold && rsi >= RSI_SHORT) return 'SHORT';
+    if (impulse < -threshold && rsi <= RSI_LONG) return 'LONG';
+
+    if (impulse > 5 && rsi >= RSI_STRONG_S) return 'SHORT';
+    if (impulse < -5 && rsi <= RSI_STRONG_L) return 'LONG';
+
+    return null;
+  }
+
+  static _runChecks({
+    impulse,
+    rsi,
+    volume,
+    threshold,
+    direction,
+    hourHigh,
+    hourLow,
+    currentPrice,
+  }) {
+    const absImpulse = Math.abs(impulse);
+    const retraceShort = ((hourHigh - currentPrice) / hourHigh) * 100;
+    const retraceLong = ((currentPrice - hourLow) / hourLow) * 100;
+    const retrace = direction === 'SHORT' ? retraceShort : retraceLong;
+
+    const standardEntry = absImpulse >= threshold && retrace >= MIN_RETRACE && volume >= MIN_VOLUME;
+    const strongEntry =
+      absImpulse >= 5 &&
+      volume >= 120 &&
+      (direction === 'SHORT' ? rsi >= RSI_STRONG_S : rsi <= RSI_STRONG_L);
 
     const checks = {
-      impulse_sufficient: Math.abs(impulse) >= threshold,
-      impulse_in_range:   Math.abs(impulse) >= MIN_IMPULSE && Math.abs(impulse) <= MAX_IMPULSE,
-      volume_spike:       volume >= MIN_VOLUME,
-      standard_entry:     standardEntry,
-      strong_momentum_entry: strongMomentumEntry,
-      entry_condition:    standardEntry || strongMomentumEntry,
-
-      rsi_elevated:       rsi >= 65,
-      strong_impulse:     Math.abs(impulse) >= 8,
-      high_volume:        volume >= 150,
+      impulse_in_range: absImpulse >= MIN_IMPULSE && absImpulse <= MAX_IMPULSE,
+      volume_ok: volume >= MIN_VOLUME,
+      standard_entry: standardEntry,
+      strong_entry: strongEntry,
+      entry_condition: standardEntry || strongEntry,
+      direction_rsi_ok: direction === 'SHORT' ? rsi >= RSI_SHORT : rsi <= RSI_LONG,
     };
 
     const required = ['impulse_in_range', 'entry_condition'];
+    checks.passed = required.every((key) => checks[key]);
 
-    checks.passed = required.every(key => checks[key]);
     checks.failed_reasons = required
-      .filter(key => !checks[key])
-      .map(key => this._getFailReason(key, { impulse, retrace, rsi, volume, threshold }));
+      .filter((key) => !checks[key])
+      .map((key) => {
+        if (key === 'impulse_in_range') {
+          return `Impulse ${impulse.toFixed(1)}% out of [${MIN_IMPULSE}%, ${MAX_IMPULSE}%]`;
+        }
+        if (key === 'entry_condition') {
+          return `No entry: retrace=${retrace.toFixed(1)}% vol=${volume.toFixed(0)}% rsi=${rsi.toFixed(0)}`;
+        }
+        return key;
+      });
 
     return checks;
   }
 
-  /**
-   * Динамический порог импульса
-   */
   static _getDynamicThreshold(atrPercent) {
-    for (const t of ATR_THRESHOLDS) {
-      if (atrPercent <= t.maxAtr) return t.minImpulse;
+    for (const threshold of ATR_THRESHOLDS) {
+      if (atrPercent <= threshold.maxAtr) return threshold.minImpulse;
     }
     return 10;
   }
 
-  /**
-   * Динамический Stop Loss
-   */
-  static _calculateStopLoss(hourHigh, atrPercent) {
-    let slPercent = 0.01;
+  static _getSlPercent(atrPercent) {
     for (const tier of SL_TIERS) {
-      if (atrPercent <= tier.maxAtr) {
-        slPercent = tier.slPercent;
-        break;
-      }
+      if (atrPercent <= tier.maxAtr) return tier.slPercent;
     }
-    return parseFloat((hourHigh * (1 + slPercent)).toFixed(8));
+    return 0.01;
   }
 
-  /**
-   * Адаптивный Take Profit
-   * - Слабый импульс (< 4%) → TP 0.5%
-   * - Нормальный импульс (>= 4%) → TP 1.0%
-   */
   static _getTpPercent(impulse) {
     return Math.abs(impulse) < 4 ? 0.005 : 0.01;
   }
 
-  /**
-   * Confidence score
-   */
-  static _calculateConfidence(impulse, rsi, volume, atrPercent) {
+  static _calculateConfidence(impulse, rsi, volume, atrPercent, direction) {
     let score = 40;
 
-    const impulseNorm = Math.min(Math.abs(impulse) / 10, 1);
-    score += impulseNorm * 20;
+    score += Math.min(Math.abs(impulse) / 10, 1) * 20;
 
-    if (rsi >= 75)      score += 15;
-    else if (rsi >= 70) score += 10;
-    else if (rsi >= 65) score += 5;
+    if (direction === 'SHORT') {
+      if (rsi >= 75) score += 15;
+      else if (rsi >= 70) score += 10;
+      else if (rsi >= 65) score += 5;
+    } else if (rsi <= 25) {
+      score += 15;
+    } else if (rsi <= 30) {
+      score += 10;
+    } else if (rsi <= 35) {
+      score += 5;
+    }
 
-    const volNorm = Math.min((volume - 100) / 50, 1);
-    score += Math.max(volNorm, 0) * 15;
+    score += Math.max(Math.min((volume - 100) / 50, 1), 0) * 15;
 
     if (atrPercent >= 3) score += 10;
     else if (atrPercent >= 1.5) score += 5;
 
     return Math.round(Math.min(score, 100));
-  }
-
-  static _getFailReason(key, data) {
-    const { impulse, retrace, rsi, volume, threshold } = data;
-    switch (key) {
-      case 'impulse_in_range':
-        return `Impulse ${impulse.toFixed(1)}% out of range [${MIN_IMPULSE}%-${MAX_IMPULSE}%]`;
-      case 'entry_condition':
-        return `No entry: neither standard (retrace+rsi) nor strong momentum met`;
-      default:
-        return key;
-    }
   }
 }
 

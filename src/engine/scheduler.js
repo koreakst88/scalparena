@@ -122,7 +122,7 @@ class Scheduler {
 🎯 *СИГНАЛ #${i + 1}* (авто)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-📊 *${signal.pair}* SHORT
+📊 *${signal.pair}* ${signal.type === 'SHORT' ? '🔴 SHORT' : '🟢 LONG'}
 💰 Цена: \`$${signal.entryPrice}\`
 📈 Импульс: *${signal.impulse}%* | RSI: *${signal.rsi}*
 🔊 Volume: *${signal.volume}%*
@@ -139,7 +139,7 @@ class Scheduler {
               [
                 {
                   text: '🟢 Я открыл позицию',
-                  callback_data: `open_${signal.pair}_${signal.entryPrice}_${signal.stopLoss}_${signal.takeProfit}`,
+                  callback_data: `open_${signal.type}_${signal.pair}_${signal.entryPrice}_${signal.stopLoss}_${signal.takeProfit}`,
                 },
                 {
                   text: '⏭️ Пропустить',

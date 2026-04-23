@@ -54,11 +54,13 @@ class PositionMonitor {
     const entryPrice = position.entry_price;
     const entryTime = new Date(position.entry_time);
     const minutesHeld = Math.round((Date.now() - entryTime) / 60000);
+    const directionMultiplier = position.trade_type === 'LONG' ? 1 : -1;
     const pnl = parseFloat(
       (
-        ((entryPrice - current) / entryPrice) *
+        ((current - entryPrice) / entryPrice) *
         position.entry_size *
-        position.leverage
+        position.leverage *
+        directionMultiplier
       ).toFixed(4)
     );
 
@@ -69,7 +71,9 @@ class PositionMonitor {
   }
 
   async _checkTPHit(position, current, pnl) {
-    if (current > position.take_profit) return;
+    const isLong = position.trade_type === 'LONG';
+    const tpHit = isLong ? current >= position.take_profit : current <= position.take_profit;
+    if (!tpHit) return;
     if (this._alreadyAlerted(position.id, 'TP')) return;
 
     this._markAlerted(position.id, 'TP');
@@ -80,7 +84,7 @@ class PositionMonitor {
 🟢 *TP ДОСТИГНУТА!*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-*${position.pair}* SHORT
+*${position.pair}* ${position.trade_type || 'SHORT'}
 Entry: \`$${position.entry_price}\`
 TP: \`$${position.take_profit}\`
 Current: \`$${current}\`
@@ -96,7 +100,9 @@ Current: \`$${current}\`
   }
 
   async _checkSLHit(position, current, pnl) {
-    if (current < position.stop_loss) return;
+    const isLong = position.trade_type === 'LONG';
+    const slHit = isLong ? current <= position.stop_loss : current >= position.stop_loss;
+    if (!slHit) return;
     if (this._alreadyAlerted(position.id, 'SL')) return;
 
     this._markAlerted(position.id, 'SL');
@@ -107,7 +113,7 @@ Current: \`$${current}\`
 🔴 *STOP LOSS ХИТ!*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-*${position.pair}* SHORT
+*${position.pair}* ${position.trade_type || 'SHORT'}
 Entry: \`$${position.entry_price}\`
 SL: \`$${position.stop_loss}\`
 Current: \`$${current}\`
@@ -141,7 +147,7 @@ Current: \`$${current}\`
 ⚡ *RSI СИГНАЛ ВЫХОДА*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-*${position.pair}* SHORT
+*${position.pair}* ${position.trade_type || 'SHORT'}
 RSI: *${rsi.toFixed(1)}* (> 75 — перекупленность)
 
 Current: \`$${current}\`

@@ -80,12 +80,20 @@ async function runTest() {
       ),
     },
     {
-      name: 'SL всегда выше entry (для SHORT)',
-      pass: signals.every((signal) => signal.stopLoss > signal.entryPrice),
+      name: 'SL корректно расположен по направлению',
+      pass: signals.every((signal) =>
+        signal.type === 'LONG'
+          ? signal.stopLoss < signal.entryPrice
+          : signal.stopLoss > signal.entryPrice
+      ),
     },
     {
-      name: 'TP всегда ниже entry (для SHORT)',
-      pass: signals.every((signal) => signal.takeProfit < signal.entryPrice),
+      name: 'TP корректно расположен по направлению',
+      pass: signals.every((signal) =>
+        signal.type === 'LONG'
+          ? signal.takeProfit > signal.entryPrice
+          : signal.takeProfit < signal.entryPrice
+      ),
     },
     {
       name: 'Confidence в диапазоне 0-100',
