@@ -21,7 +21,6 @@ async function main() {
   }
 
   bot = new ScalpArenaBot();
-  await bot.start();
 
   if (process.env.NODE_ENV === 'production') {
     const railwayUrl =
@@ -31,6 +30,11 @@ async function main() {
       const webhookUrl = `https://${railwayUrl}/webhook`;
 
       app.post('/webhook', (req, res) => {
+        if (!bot) {
+          res.sendStatus(200);
+          return;
+        }
+
         bot.bot.processUpdate(req.body);
         res.sendStatus(200);
       });
@@ -42,6 +46,8 @@ async function main() {
       await bot.bot.startPolling();
     }
   }
+
+  await bot.start();
 }
 
 const PORT = process.env.PORT || 3000;

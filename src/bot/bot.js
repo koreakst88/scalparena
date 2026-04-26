@@ -29,21 +29,22 @@ class ScalpArenaBot {
     this.monitor = null;
     this.scheduler = null;
     this.ready = false;
+    this.commandsRegistered = false;
 
     console.log('✅ ScalpArenaBot initialized');
+    this._registerCommands();
   }
 
   async start() {
     console.log('🚀 Starting ScalpArena Bot...');
+
+    this._registerCommands();
 
     // Инициализировать провайдер данных
     await this.provider.validatePairs();
     await this.provider.backfillAll('60');
     this.provider.connect();
     this.ready = true;
-
-    // Регистрировать команды
-    this._registerCommands();
 
     this.monitor = new PositionMonitor(this, this.db, this.provider);
     this.monitor.start();
@@ -55,6 +56,8 @@ class ScalpArenaBot {
   }
 
   _registerCommands() {
+    if (this.commandsRegistered) return;
+
     this.bot.onText(/\/start/, this._safe((msg) => this._onStart(msg)));
     this.bot.onText(/\/scan/, this._safe((msg) => this._onScan(msg)));
     this.bot.onText(/\/status/, this._safe((msg) => this._onStatus(msg)));
@@ -70,6 +73,7 @@ class ScalpArenaBot {
       console.error('❌ Telegram polling error:', error?.message || error);
     });
 
+    this.commandsRegistered = true;
     console.log('✅ Commands registered');
   }
 
