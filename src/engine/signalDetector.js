@@ -3,118 +3,95 @@
 const TechnicalIndicators = require('./indicators');
 
 /**
- * Dynamic Momentum Scalping - BIDIRECTIONAL MODE
+ * Mean Reversion Strategy
  *
- * SHORT: рынок вырос → ждём откат вниз
- * LONG: рынок упал → ждём отскок вверх
+ * Идея: рынок не двигается линейно. После сильного движения
+ * в одну сторону происходит откат к среднему.
+ *
+ * LONG: цена упала слишком сильно (RSI < 30) -> ждём отскок вверх
+ * SHORT: цена выросла слишком сильно (RSI > 70) -> ждём откат вниз
+ *
+ * Работает в боковике и на спокойном рынке (когда Momentum молчит).
  */
 
-const MIN_IMPULSE = 1.5;
-const MAX_IMPULSE = 20;
-const MIN_RETRACE = 0.3;
-const MIN_VOLUME = 102;
-const RSI_SHORT = 60;
-const RSI_LONG = 40;
-const RSI_STRONG_S = 65;
-const RSI_STRONG_L = 35;
-const MIN_RR = 1.0;
+const RSI_OVERSOLD = 32;
+const RSI_OVERBOUGHT = 68;
+const RSI_EXTREME_LOW = 25;
+const RSI_EXTREME_HIGH = 75;
 
-const ATR_THRESHOLDS = [
-  { maxAtr: 1, minImpulse: 1.5 },
-  { maxAtr: 2, minImpulse: 2.5 },
-  { maxAtr: 4, minImpulse: 4 },
-  { maxAtr: 7, minImpulse: 6 },
-  { maxAtr: Infinity, minImpulse: 10 },
-];
+const BB_TOUCH_PERCENT = 1.5;
+const MIN_VOLUME = 80;
+const MIN_BB_WIDTH = 0.5;
 
-const SL_TIERS = [
-  { maxAtr: 1, slPercent: 0.003 },
-  { maxAtr: 2, slPercent: 0.005 },
-  { maxAtr: 5, slPercent: 0.0075 },
-  { maxAtr: Infinity, slPercent: 0.01 },
-];
+const TP_PERCENT = 0.005;
+const SL_PERCENT = 0.01;
 
 class SignalDetector {
   static detectSignal(pair, candles) {
-    if (!candles || candles.length < 5) return null;
+    if (!candles || candles.length < 20) return null;
 
     const current = candles[candles.length - 1];
     const prices = candles.map((candle) => candle.close);
-    const atrPeriod = Math.min(14, Math.max(candles.length - 1, 1));
-    const rsiPeriod = Math.min(14, Math.max(prices.length - 1, 2));
-    const volumePeriod = Math.min(20, Math.max(candles.length, 2));
-    const atr = TechnicalIndicators.calculateATR(candles, atrPeriod);
-    const rsi = TechnicalIndicators.calculateRSI(prices, rsiPeriod);
-    const volume = TechnicalIndicators.calculateVolumeProfile(candles, volumePeriod);
-    const atrPercent = (atr / current.close) * 100;
-    const threshold = this._getDynamicThreshold(atrPercent);
 
-    const hourOpen = current.open;
-    const hourHigh = current.high;
-    const hourLow = current.low;
+    const rsi = TechnicalIndicators.calculateRSI(prices, 14);
+    const bollingerBands = TechnicalIndicators.calculateBollingerBands(prices, 20, 2);
+    const volume = TechnicalIndicators.calculateVolumeProfile(candles, 20);
+    const atr = TechnicalIndicators.calculateATR(candles, 14);
+
     const currentPrice = current.close;
-    const impulse = ((currentPrice - hourOpen) / hourOpen) * 100;
+    const atrPercent = (atr / currentPrice) * 100;
+    const bbRange = bollingerBands.upper - bollingerBands.lower;
 
-    const direction = this._getDirection(impulse, rsi, threshold);
+    if (!Number.isFinite(bbRange) || bbRange <= 0 || bollingerBands.middle === 0) {
+      return null;
+    }
+
+    const bbWidth = (bbRange / bollingerBands.middle) * 100;
+    const bbPosition = ((currentPrice - bollingerBands.lower) / bbRange) * 100;
+
+    const direction = this._getDirection(rsi, bbPosition, bbWidth, volume);
     if (!direction) return null;
-
-    const checks = this._runChecks({
-      impulse,
-      rsi,
-      volume,
-      threshold,
-      direction,
-      hourHigh,
-      hourLow,
-      currentPrice,
-    });
-
-    if (!checks.passed) return null;
-
-    const slPercent = this._getSlPercent(atrPercent);
-    const tpPercent = this._getTpPercent(impulse);
 
     let stopLoss;
     let takeProfit;
 
-    if (direction === 'SHORT') {
-      stopLoss = parseFloat((hourHigh * (1 + slPercent)).toFixed(8));
-      takeProfit = parseFloat((currentPrice * (1 - tpPercent)).toFixed(8));
+    if (direction === 'LONG') {
+      stopLoss = parseFloat((currentPrice * (1 - SL_PERCENT)).toFixed(8));
+      takeProfit = parseFloat((currentPrice * (1 + TP_PERCENT)).toFixed(8));
     } else {
-      stopLoss = parseFloat((hourLow * (1 - slPercent)).toFixed(8));
-      takeProfit = parseFloat((currentPrice * (1 + tpPercent)).toFixed(8));
+      stopLoss = parseFloat((currentPrice * (1 + SL_PERCENT)).toFixed(8));
+      takeProfit = parseFloat((currentPrice * (1 - TP_PERCENT)).toFixed(8));
     }
 
     const slDist = Math.abs(currentPrice - stopLoss);
     const tpDist = Math.abs(currentPrice - takeProfit);
     const riskReward = parseFloat((tpDist / slDist).toFixed(2));
-    if (riskReward < MIN_RR) return null;
-
-    const confidence = this._calculateConfidence(impulse, rsi, volume, atrPercent, direction);
+    const confidence = this._calculateConfidence(rsi, bbPosition, volume, direction);
 
     return {
       pair,
       type: direction,
       entryPrice: currentPrice,
-      hourHigh,
-      hourLow,
-      hourOpen,
 
       stopLoss,
       takeProfit,
-      tpPercent: parseFloat((tpPercent * 100).toFixed(2)),
+      tpPercent: parseFloat((TP_PERCENT * 100).toFixed(2)),
+      slPercent: parseFloat((SL_PERCENT * 100).toFixed(2)),
       riskReward,
       maxRisk: null,
 
-      impulse: parseFloat(impulse.toFixed(2)),
       rsi: parseFloat(rsi.toFixed(2)),
       volume: parseFloat(volume.toFixed(2)),
       atr: parseFloat(atr.toFixed(6)),
       atrPercent: parseFloat(atrPercent.toFixed(2)),
+      bbPosition: parseFloat(bbPosition.toFixed(1)),
+      bbWidth: parseFloat(bbWidth.toFixed(2)),
+
+      impulse: 0,
 
       confidence,
-      checks,
-      entryMode: checks.strong_entry ? 'STRONG' : 'STANDARD',
+      strategy: 'MEAN_REVERSION',
+      entryMode: this._isExtreme(rsi) ? 'STRONG' : 'STANDARD',
 
       generatedAt: new Date(),
       expiresAt: new Date(Date.now() + 30 * 60 * 1000),
@@ -128,7 +105,7 @@ class SignalDetector {
 
     for (const pair of pairs) {
       const candles = provider.getCandles(pair, 50);
-      if (!provider.hasEnoughData(pair, 5)) continue;
+      if (!provider.hasEnoughData(pair, 20)) continue;
 
       const signal = this.detectSignal(pair, candles);
       if (signal) signals.push(signal);
@@ -138,107 +115,48 @@ class SignalDetector {
     return signals;
   }
 
-  static _getDirection(impulse, rsi, threshold) {
-    const absImpulse = Math.abs(impulse);
+  static _getDirection(rsi, bbPosition, bbWidth, volume) {
+    if (volume < MIN_VOLUME) return null;
+    if (bbWidth < MIN_BB_WIDTH) return null;
 
-    if (absImpulse < MIN_IMPULSE || absImpulse > MAX_IMPULSE) return null;
+    if (rsi <= RSI_EXTREME_LOW) return 'LONG';
+    if (rsi >= RSI_EXTREME_HIGH) return 'SHORT';
 
-    if (impulse > threshold && rsi >= RSI_SHORT) return 'SHORT';
-    if (impulse < -threshold && rsi <= RSI_LONG) return 'LONG';
+    if (rsi <= RSI_OVERSOLD && bbPosition <= 20) {
+      return 'LONG';
+    }
 
-    if (impulse > 5 && rsi >= RSI_STRONG_S) return 'SHORT';
-    if (impulse < -5 && rsi <= RSI_STRONG_L) return 'LONG';
+    if (rsi >= RSI_OVERBOUGHT && bbPosition >= 80) {
+      return 'SHORT';
+    }
 
     return null;
   }
 
-  static _runChecks({
-    impulse,
-    rsi,
-    volume,
-    threshold,
-    direction,
-    hourHigh,
-    hourLow,
-    currentPrice,
-  }) {
-    const absImpulse = Math.abs(impulse);
-    const retraceShort = ((hourHigh - currentPrice) / hourHigh) * 100;
-    const retraceLong = ((currentPrice - hourLow) / hourLow) * 100;
-    const retrace = direction === 'SHORT' ? retraceShort : retraceLong;
-
-    const standardEntry = absImpulse >= threshold && retrace >= MIN_RETRACE && volume >= MIN_VOLUME;
-    const strongEntry =
-      absImpulse >= 5 &&
-      volume >= 120 &&
-      (direction === 'SHORT' ? rsi >= RSI_STRONG_S : rsi <= RSI_STRONG_L);
-
-    const checks = {
-      impulse_in_range: absImpulse >= MIN_IMPULSE && absImpulse <= MAX_IMPULSE,
-      volume_ok: volume >= MIN_VOLUME,
-      standard_entry: standardEntry,
-      strong_entry: strongEntry,
-      entry_condition: standardEntry || strongEntry,
-      direction_rsi_ok: direction === 'SHORT' ? rsi >= RSI_SHORT : rsi <= RSI_LONG,
-    };
-
-    const required = ['impulse_in_range', 'entry_condition'];
-    checks.passed = required.every((key) => checks[key]);
-
-    checks.failed_reasons = required
-      .filter((key) => !checks[key])
-      .map((key) => {
-        if (key === 'impulse_in_range') {
-          return `Impulse ${impulse.toFixed(1)}% out of [${MIN_IMPULSE}%, ${MAX_IMPULSE}%]`;
-        }
-        if (key === 'entry_condition') {
-          return `No entry: retrace=${retrace.toFixed(1)}% vol=${volume.toFixed(0)}% rsi=${rsi.toFixed(0)}`;
-        }
-        return key;
-      });
-
-    return checks;
+  static _isExtreme(rsi) {
+    return rsi <= RSI_EXTREME_LOW || rsi >= RSI_EXTREME_HIGH;
   }
 
-  static _getDynamicThreshold(atrPercent) {
-    for (const threshold of ATR_THRESHOLDS) {
-      if (atrPercent <= threshold.maxAtr) return threshold.minImpulse;
-    }
-    return 10;
-  }
+  static _calculateConfidence(rsi, bbPosition, volume, direction) {
+    let score = 50;
 
-  static _getSlPercent(atrPercent) {
-    for (const tier of SL_TIERS) {
-      if (atrPercent <= tier.maxAtr) return tier.slPercent;
-    }
-    return 0.01;
-  }
-
-  static _getTpPercent(impulse) {
-    return Math.abs(impulse) < 4 ? 0.005 : 0.01;
-  }
-
-  static _calculateConfidence(impulse, rsi, volume, atrPercent, direction) {
-    let score = 40;
-
-    score += Math.min(Math.abs(impulse) / 10, 1) * 20;
-
-    if (direction === 'SHORT') {
-      if (rsi >= 75) score += 15;
-      else if (rsi >= 70) score += 10;
-      else if (rsi >= 65) score += 5;
-    } else if (rsi <= 25) {
-      score += 15;
-    } else if (rsi <= 30) {
-      score += 10;
-    } else if (rsi <= 35) {
-      score += 5;
+    if (direction === 'LONG') {
+      if (rsi <= 20) score += 25;
+      else if (rsi <= 25) score += 20;
+      else if (rsi <= 30) score += 15;
+      else if (rsi <= 32) score += 10;
+    } else {
+      if (rsi >= 80) score += 25;
+      else if (rsi >= 75) score += 20;
+      else if (rsi >= 70) score += 15;
+      else if (rsi >= 68) score += 10;
     }
 
-    score += Math.max(Math.min((volume - 100) / 50, 1), 0) * 15;
+    if (direction === 'LONG' && bbPosition <= 10) score += 10;
+    if (direction === 'SHORT' && bbPosition >= 90) score += 10;
 
-    if (atrPercent >= 3) score += 10;
-    else if (atrPercent >= 1.5) score += 5;
+    if (volume >= 120) score += 10;
+    else if (volume >= 100) score += 5;
 
     return Math.round(Math.min(score, 100));
   }

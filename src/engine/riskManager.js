@@ -54,14 +54,15 @@ class RiskManager {
    * @param {number} currentBalance - текущий баланс
    * @param {number} entryPrice - цена входа
    * @param {number} atrPercent - ATR в процентах
+   * @param {Object} overrides - optional { slPercent, tpPercent } as decimal fractions
    * @returns {Object} параметры позиции
    */
-  static calculatePosition(currentBalance, entryPrice, atrPercent) {
+  static calculatePosition(currentBalance, entryPrice, atrPercent, overrides = {}) {
     const leverage = this.getLeverage(currentBalance);
     const margin = this.getMargin(currentBalance);
     const notional = margin * leverage;
-    const slPercent = this.getSlPercent(atrPercent);
-    const tpPercent = TP_PERCENT;
+    const slPercent = overrides.slPercent ?? this.getSlPercent(atrPercent);
+    const tpPercent = overrides.tpPercent ?? TP_PERCENT;
 
     const maxLoss = parseFloat((notional * slPercent + margin * COMMISSION).toFixed(4));
 

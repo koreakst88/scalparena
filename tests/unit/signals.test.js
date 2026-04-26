@@ -31,14 +31,16 @@ async function runTest() {
 
       const TechnicalIndicators = require('../../src/engine/indicators');
       const prices = candles.map((candle) => candle.close);
-      const current = candles[candles.length - 1];
-      const impulse = ((current.close - current.open) / current.open) * 100;
+      const currentPrice = candles[candles.length - 1].close;
       const rsi = TechnicalIndicators.calculateRSI(prices, 14);
       const volume = TechnicalIndicators.calculateVolumeProfile(candles, 20);
-      const retrace = ((current.high - current.close) / current.high) * 100;
+      const bb = TechnicalIndicators.calculateBollingerBands(prices, 20, 2);
+      const bbRange = bb.upper - bb.lower;
+      const bbPosition = bbRange > 0 ? ((currentPrice - bb.lower) / bbRange) * 100 : 0;
+      const bbWidth = bb.middle ? ((bb.upper - bb.lower) / bb.middle) * 100 : 0;
 
       console.log(
-        `   📊 ${pair}: impulse=${impulse.toFixed(1)}% | RSI=${rsi.toFixed(0)} | vol=${volume.toFixed(0)}% | retrace=${retrace.toFixed(1)}%`
+        `   📊 ${pair}: RSI=${rsi.toFixed(0)} | BB=${bbPosition.toFixed(0)}% | width=${bbWidth.toFixed(1)}% | vol=${volume.toFixed(0)}%`
       );
     });
   } else {
@@ -51,9 +53,9 @@ async function runTest() {
       console.log(`  Entry:      $${signal.entryPrice}`);
       console.log(`  Stop Loss:  $${signal.stopLoss}`);
       console.log(`  Take Profit:$${signal.takeProfit}`);
-      console.log(`  Impulse:    ${signal.impulse}%`);
-      console.log(`  Retrace:    ${signal.retrace}%`);
       console.log(`  RSI:        ${signal.rsi}`);
+      console.log(`  BB Position:${signal.bbPosition}%`);
+      console.log(`  BB Width:   ${signal.bbWidth}%`);
       console.log(`  Volume:     ${signal.volume}%`);
       console.log(`  Confidence: ${signal.confidence}%`);
       console.log(`  Expires:    ${signal.expiresAt.toLocaleTimeString()}`);
@@ -65,7 +67,7 @@ async function runTest() {
   console.log('\n🎯 Test checks:');
   const checks = [
     {
-      name: 'SignalDetector.scanAll() не упал с ошибкой',
+      name: 'SignalDetector.scanAll() работает',
       pass: Array.isArray(signals),
     },
     {
@@ -76,23 +78,33 @@ async function runTest() {
           signal.entryPrice &&
           signal.stopLoss &&
           signal.takeProfit &&
-          signal.confidence !== undefined
+          signal.confidence !== undefined &&
+          signal.strategy === 'MEAN_REVERSION'
       ),
     },
     {
-      name: 'SL корректно расположен по направлению',
-      pass: signals.every((signal) =>
-        signal.type === 'LONG'
-          ? signal.stopLoss < signal.entryPrice
-          : signal.stopLoss > signal.entryPrice
-      ),
+      name: 'LONG: SL ниже entry, TP выше',
+      pass: signals
+        .filter((signal) => signal.type === 'LONG')
+        .every(
+          (signal) => signal.stopLoss < signal.entryPrice && signal.takeProfit > signal.entryPrice
+        ),
     },
     {
-      name: 'TP корректно расположен по направлению',
-      pass: signals.every((signal) =>
-        signal.type === 'LONG'
-          ? signal.takeProfit > signal.entryPrice
-          : signal.takeProfit < signal.entryPrice
+      name: 'SHORT: SL выше entry, TP ниже',
+      pass: signals
+        .filter((signal) => signal.type === 'SHORT')
+        .every(
+          (signal) => signal.stopLoss > signal.entryPrice && signal.takeProfit < signal.entryPrice
+        ),
+    },
+    {
+      name: 'Mean Reversion поля присутствуют',
+      pass: signals.every(
+        (signal) =>
+          signal.bbPosition !== undefined &&
+          signal.bbWidth !== undefined &&
+          signal.slPercent !== undefined
       ),
     },
     {

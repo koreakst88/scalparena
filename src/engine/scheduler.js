@@ -113,7 +113,11 @@ class Scheduler {
       const position = RiskManager.calculatePosition(
         user.account_balance,
         signal.entryPrice,
-        signal.atrPercent
+        signal.atrPercent,
+        {
+          slPercent: signal.slPercent / 100,
+          tpPercent: signal.tpPercent / 100,
+        }
       );
 
       await this.bot._send(
@@ -124,8 +128,10 @@ class Scheduler {
 
 📊 *${signal.pair}* ${signal.type === 'SHORT' ? '🔴 SHORT' : '🟢 LONG'}
 💰 Цена: \`$${signal.entryPrice}\`
-📈 Импульс: *${signal.impulse}%* | RSI: *${signal.rsi}*
+🎯 RSI: *${signal.rsi}*
+📊 BB Position: *${signal.bbPosition}%*
 🔊 Volume: *${signal.volume}%*
+📏 BB Width: *${signal.bbWidth}%*
 
 🛑 SL: \`$${signal.stopLoss}\`
 🟢 TP: \`$${signal.takeProfit}\`

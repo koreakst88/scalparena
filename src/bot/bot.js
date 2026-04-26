@@ -153,12 +153,14 @@ class ScalpArenaBot {
         }
 
         const prices = candles.map((candle) => candle.close);
-        const current = candles[candles.length - 1];
-        const impulse = (((current.close - current.open) / current.open) * 100).toFixed(1);
+        const currentPrice = candles[candles.length - 1].close;
         const rsi = TechnicalIndicators.calculateRSI(prices, 14).toFixed(0);
         const volume = TechnicalIndicators.calculateVolumeProfile(candles, 20).toFixed(0);
-        const direction = impulse > 0 ? '📈' : '📉';
-        diagnostics += `  ${direction} ${pair}: ${impulse}% | RSI ${rsi} | Vol ${volume}%\n`;
+        const bb = TechnicalIndicators.calculateBollingerBands(prices, 20, 2);
+        const bbRange = bb.upper - bb.lower;
+        const bbPosition = bbRange > 0 ? (((currentPrice - bb.lower) / bbRange) * 100).toFixed(0) : 'n/a';
+        const bbWidth = bb.middle ? (((bb.upper - bb.lower) / bb.middle) * 100).toFixed(1) : 'n/a';
+        diagnostics += `  📊 ${pair}: RSI ${rsi} | BB ${bbPosition}% | Width ${bbWidth}% | Vol ${volume}%\n`;
       }
 
       return this._send(
@@ -166,8 +168,8 @@ class ScalpArenaBot {
         `
 📭 *Сигналов не найдено*
 
-Рынок сейчас не даёт чётких импульсов.
-Система ищет движения 1.5-20% с подтверждением RSI и объёма.
+Рынок сейчас не даёт Mean Reversion сетапов.
+Система ищет отскоки от RSI экстремумов (< 32 или > 68) и Bollinger Bands.
 
 📊 *Топ 5 пар сейчас:*
 ${diagnostics}
@@ -183,7 +185,11 @@ ${diagnostics}
       const position = RiskManager.calculatePosition(
         accountBalance,
         signal.entryPrice,
-        signal.atrPercent
+        signal.atrPercent,
+        {
+          slPercent: signal.slPercent / 100,
+          tpPercent: signal.tpPercent / 100,
+        }
       );
 
       await this._send(
@@ -195,10 +201,10 @@ ${diagnostics}
 📊 *${signal.pair}* ${signal.type === 'SHORT' ? '🔴 SHORT' : '🟢 LONG'}
 
 💰 Цена входа: \`$${signal.entryPrice}\`
-📈 Импульс: *${signal.impulse}%*
-📊 Откат: *${signal.retrace}%*
+🎯 RSI: *${signal.rsi}* ${signal.rsi < 30 ? '(перепродано)' : signal.rsi > 70 ? '(перекуплено)' : ''}
+📊 BB Position: *${signal.bbPosition}%* (0=низ, 100=верх)
 🔊 Volume: *${signal.volume}%*
-RSI: *${signal.rsi}*
+📏 BB Width: *${signal.bbWidth}%*
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✅ *ПАРАМЕТРЫ СДЕЛКИ:*
@@ -511,6 +517,13 @@ ${insights}
       const takeProfit = parseFloat(hasDirection ? parts[5] : parts[4]);
 
       const user = await this.db.getUser(userId);
+      const accountBalance = user?.account_balance || 200;
+      const slPercent = Math.abs(stopLoss - entryPrice) / entryPrice;
+      const tpPercent = Math.abs(takeProfit - entryPrice) / entryPrice;
+      const position = RiskManager.calculatePosition(accountBalance, entryPrice, 1.5, {
+        slPercent,
+        tpPercent,
+      });
 
       // Залогировать сделку
       await this.db.logTrade(userId, {
@@ -518,11 +531,11 @@ ${insights}
         trade_type: direction,
         entry_price: entryPrice,
         entry_time: new Date(),
-        entry_size: user ? RiskManager.getMargin(user.account_balance) : 10,
-        leverage: user ? RiskManager.getLeverage(user.account_balance) : 10,
+        entry_size: position.margin,
+        leverage: position.leverage,
         stop_loss: stopLoss,
         take_profit: takeProfit,
-        max_risk: user ? RiskManager.calculatePosition(user.account_balance, entryPrice, 1.5).maxLoss : 4,
+        max_risk: position.maxLoss,
         status: 'OPEN',
       });
 
