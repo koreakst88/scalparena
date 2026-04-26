@@ -59,11 +59,13 @@ ${JSON.stringify(tradeSummary, null, 2)}
 
 Максимум 5-6 предложений. Пиши конкретно и по делу.
 Не используй markdown разметку в ответе.
+ВАЖНО: НЕ используй символы форматирования: звёздочки *, подчёркивания _, обратные кавычки \`, квадратные скобки [].
+Пиши plain text без форматирования.
     `.trim();
 
     try {
       const response = await this._callOpenAI(prompt);
-      return response;
+      return this._sanitizeTelegramText(response);
     } catch (err) {
       console.error('❌ GPT error:', err.message);
       return '⚠️ GPT анализ временно недоступен. Попробуй позже.';
@@ -118,6 +120,12 @@ ${JSON.stringify(tradeSummary, null, 2)}
       req.write(body);
       req.end();
     });
+  }
+
+  _sanitizeTelegramText(text) {
+    return String(text)
+      .replace(/[*_`\[\]]/g, '')
+      .trim();
   }
 }
 

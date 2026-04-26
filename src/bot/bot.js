@@ -427,17 +427,16 @@ Exit:  \`$${exitPrice}\`
     const closedTrades = trades.filter((trade) => trade.status === 'CLOSED');
     const insights = await this.analyzer.generateDailyInsights(closedTrades, stats);
 
-    await this._send(
+    await this._sendPlain(
       userId,
-      `
-🤖 *AI INSIGHTS*
-════════════════════════════════
+      `🤖 AI INSIGHTS
+──────────────────────────────
 
 ${insights}
 
-════════════════════════════════
+──────────────────────────────
 ✅ До встречи завтра в 08:00!
-  `
+  `.trim()
     );
   }
 
@@ -618,6 +617,14 @@ Entry: \`$${entryPrice}\`
       });
     } catch (e) {
       console.error(`❌ Send error to ${chatId}:`, e.message);
+    }
+  }
+
+  async _sendPlain(chatId, text, options = {}) {
+    try {
+      await this.bot.sendMessage(chatId, text, options);
+    } catch (e) {
+      console.error(`❌ Send plain error to ${chatId}:`, e.message);
     }
   }
 
