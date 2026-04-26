@@ -23,8 +23,8 @@ const BB_TOUCH_PERCENT = 1.5;
 const MIN_VOLUME = 80;
 const MIN_BB_WIDTH = 0.5;
 
-const TP_PERCENT = 0.005;
-const SL_PERCENT = 0.01;
+const TP_PERCENT = 0.008;
+const SL_PERCENT = 0.008;
 
 class SignalDetector {
   static detectSignal(pair, candles) {
