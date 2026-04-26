@@ -121,15 +121,21 @@ class SupabaseClient {
     return data || [];
   }
 
-  async getTradesSince(userId, sinceIso) {
+  async getTradesSince(userId, since) {
+    const sinceIso = since instanceof Date ? since.toISOString() : since;
+
     const { data, error } = await this.client
       .from('trades')
       .select('*')
-      .eq('user_id', userId)
+      .eq('user_id', String(userId))
       .gte('entry_time', sinceIso)
       .order('entry_time', { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      console.error('❌ getTradesSince error:', error.message);
+      return [];
+    }
+
     return data || [];
   }
 
