@@ -46,33 +46,50 @@ class PositionMonitor {
   }
 
   async _checkPosition(position) {
-    const pair = position.pair.includes('USDT') ? position.pair : `${position.pair}USDT`;
-    const candle = this.provider.getCurrentCandle(pair);
-    if (!candle) return;
+    const pair = position.pair.includes('USDT')
+      ? position.pair
+      : `${position.pair}USDT`;
 
-    const current = candle.close;
+    const liveCandle = this.provider.getCurrentCandle(pair);
+    if (!liveCandle) return;
+
+    const current = liveCandle.close;
     const entryPrice = position.entry_price;
-    const entryTime = new Date(position.entry_time);
-    const minutesHeld = Math.round((Date.now() - entryTime) / 60000);
-    const directionMultiplier = position.trade_type === 'LONG' ? 1 : -1;
-    const pnl = parseFloat(
-      (
-        ((current - entryPrice) / entryPrice) *
-        position.entry_size *
-        position.leverage *
-        directionMultiplier
-      ).toFixed(4)
+    const minutesHeld = Math.round(
+      (Date.now() - new Date(position.entry_time)) / 60000
     );
+    const direction = position.trade_type || 'SHORT';
+    let pnl;
 
-    await this._checkTPHit(position, current, pnl);
-    await this._checkSLHit(position, current, pnl);
+    if (direction === 'SHORT') {
+      pnl = parseFloat(
+        (
+          ((entryPrice - current) / entryPrice) *
+          position.entry_size *
+          position.leverage
+        ).toFixed(4)
+      );
+    } else {
+      pnl = parseFloat(
+        (
+          ((current - entryPrice) / entryPrice) *
+          position.entry_size *
+          position.leverage
+        ).toFixed(4)
+      );
+    }
+
+    await this._checkTPHit(position, current, pnl, direction);
+    await this._checkSLHit(position, current, pnl, direction);
     await this._checkRSIExit(position, pair, current, pnl);
-    await this._checkTimeout(position, minutesHeld, pnl);
+    await this._checkTimeout(position, minutesHeld, pnl, current);
   }
 
-  async _checkTPHit(position, current, pnl) {
-    const isLong = position.trade_type === 'LONG';
-    const tpHit = isLong ? current >= position.take_profit : current <= position.take_profit;
+  async _checkTPHit(position, current, pnl, direction = 'SHORT') {
+    const tpHit = direction === 'SHORT'
+      ? current <= position.take_profit
+      : current >= position.take_profit;
+
     if (!tpHit) return;
     if (this._alreadyAlerted(position.id, 'TP')) return;
 
@@ -84,12 +101,12 @@ class PositionMonitor {
 🟢 *TP ДОСТИГНУТА!*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-*${position.pair}* ${position.trade_type || 'SHORT'}
+*${position.pair}* ${direction}
 Entry: \`$${position.entry_price}\`
 TP: \`$${position.take_profit}\`
 Current: \`$${current}\`
 
-💰 P&L: *+$${pnl}*
+💰 P&L: *+$${Math.abs(pnl)}*
 ⏱️ Время: *${Math.round((Date.now() - new Date(position.entry_time)) / 60000)} мин*
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -99,9 +116,11 @@ Current: \`$${current}\`
     );
   }
 
-  async _checkSLHit(position, current, pnl) {
-    const isLong = position.trade_type === 'LONG';
-    const slHit = isLong ? current <= position.stop_loss : current >= position.stop_loss;
+  async _checkSLHit(position, current, pnl, direction = 'SHORT') {
+    const slHit = direction === 'SHORT'
+      ? current >= position.stop_loss
+      : current <= position.stop_loss;
+
     if (!slHit) return;
     if (this._alreadyAlerted(position.id, 'SL')) return;
 
@@ -113,7 +132,7 @@ Current: \`$${current}\`
 🔴 *STOP LOSS ХИТ!*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-*${position.pair}* ${position.trade_type || 'SHORT'}
+*${position.pair}* ${direction}
 Entry: \`$${position.entry_price}\`
 SL: \`$${position.stop_loss}\`
 Current: \`$${current}\`
@@ -121,8 +140,8 @@ Current: \`$${current}\`
 💰 P&L: *$${pnl}*
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
-❌ Позиция закрыта по стопу
-Подтверди: /exit ${current}
+❌ Закрой позицию на Bybit
+Затем: /exit ${current}
     `
     );
   }
@@ -170,10 +189,7 @@ Current: \`$${current}\`
     );
   }
 
-  async _checkTimeout(position, minutesHeld, pnl) {
-    const pair = position.pair.includes('USDT') ? position.pair : `${position.pair}USDT`;
-    const current = this.provider.getCurrentCandle(pair)?.close;
-
+  async _checkTimeout(position, minutesHeld, pnl, current = null) {
     if (minutesHeld >= 60 && !this._alreadyAlerted(position.id, 'TIMEOUT_60')) {
       this._markAlerted(position.id, 'TIMEOUT_60');
 
