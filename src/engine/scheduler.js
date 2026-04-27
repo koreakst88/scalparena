@@ -132,6 +132,10 @@ class Scheduler {
 
     for (let i = 0; i < top.length; i++) {
       const signal = top[i];
+      const signalId = this.bot._storePendingSignal(signal);
+      const strategyLabel = this.bot._formatSignalLabel(signal.strategy);
+      const regimeLabel = this.bot._formatSignalLabel(signal.marketRegime);
+      const entryModeLabel = this.bot._formatSignalLabel(signal.entryMode);
       const position = RiskManager.calculatePosition(
         user.account_balance,
         signal.entryPrice,
@@ -149,11 +153,16 @@ class Scheduler {
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📊 *${signal.pair}* ${signal.type === 'SHORT' ? '🔴 SHORT' : '🟢 LONG'}
+🧠 Strategy: *${strategyLabel}* (${entryModeLabel})
+🌡️ Regime: *${regimeLabel}*
 💰 Цена: \`$${signal.entryPrice}\`
+🧾 Причина: ${signal.setupReason}
 🎯 RSI: *${signal.rsi}*
+📉 MACD: *${signal.macdBias}* (hist ${signal.macdHistogram})
 📊 BB Position: *${signal.bbPosition}%*
 🔊 Volume: *${signal.volume}%*
 📏 BB Width: *${signal.bbWidth}%*
+🚫 Invalidation: ${signal.invalidationRule}
 
 🛑 SL: \`$${signal.stopLoss}\`
 🟢 TP: \`$${signal.takeProfit}\`
@@ -167,7 +176,7 @@ class Scheduler {
               [
                 {
                   text: '🟢 Я открыл позицию',
-                  callback_data: `open_${signal.type}_${signal.pair}_${signal.entryPrice}_${signal.stopLoss}_${signal.takeProfit}`,
+                  callback_data: `open_${signalId}`,
                 },
                 {
                   text: '⏭️ Пропустить',

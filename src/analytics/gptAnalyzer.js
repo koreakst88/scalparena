@@ -26,12 +26,19 @@ class GptAnalyzer {
     // Подготовить краткую сводку сделок для GPT
     const tradeSummary = trades.slice(0, 10).map((trade) => ({
       pair: trade.pair,
+      strategy: trade.strategy,
+      market_regime: trade.market_regime,
       pnl: trade.profit_loss,
       duration: trade.exit_time
         ? Math.round((new Date(trade.exit_time) - new Date(trade.entry_time)) / 60000)
         : null,
       exit_reason: trade.exit_reason,
       rsi: trade.rsi_at_entry,
+      macd_bias: trade.macd_bias,
+      macd_histogram: trade.macd_histogram_at_entry,
+      bb_position: trade.bb_position,
+      bb_width: trade.bb_width,
+      atr_percent: trade.atr_percent,
       volume: trade.volume_spike_percentage,
     }));
 

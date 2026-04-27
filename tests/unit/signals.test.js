@@ -54,8 +54,10 @@ async function runTest() {
       console.log(`  Stop Loss:  $${signal.stopLoss}`);
       console.log(`  Take Profit:$${signal.takeProfit}`);
       console.log(`  RSI:        ${signal.rsi}`);
+      console.log(`  MACD:       ${signal.macdBias} (${signal.macdHistogram})`);
       console.log(`  BB Position:${signal.bbPosition}%`);
       console.log(`  BB Width:   ${signal.bbWidth}%`);
+      console.log(`  Regime:     ${signal.marketRegime}`);
       console.log(`  Volume:     ${signal.volume}%`);
       console.log(`  Confidence: ${signal.confidence}%`);
       console.log(`  Expires:    ${signal.expiresAt.toLocaleTimeString()}`);
@@ -104,7 +106,11 @@ async function runTest() {
         (signal) =>
           signal.bbPosition !== undefined &&
           signal.bbWidth !== undefined &&
-          signal.slPercent !== undefined
+          signal.slPercent !== undefined &&
+          signal.macdBias !== undefined &&
+          signal.marketRegime !== undefined &&
+          signal.setupReason !== undefined &&
+          signal.invalidationRule !== undefined
       ),
     },
     {

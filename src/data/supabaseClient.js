@@ -3,6 +3,24 @@
 const { createClient } = require('@supabase/supabase-js');
 const RiskManager = require('../engine/riskManager');
 
+const TRADE_CONTEXT_FIELDS = [
+  'strategy',
+  'entry_mode',
+  'market_regime',
+  'signal_confidence',
+  'signal_reason',
+  'invalidation_rule',
+  'rsi_at_entry',
+  'macd_at_entry',
+  'macd_signal_at_entry',
+  'macd_histogram_at_entry',
+  'macd_bias',
+  'bb_position',
+  'bb_width',
+  'atr_percent',
+  'volume_spike_percentage',
+];
+
 class SupabaseClient {
   constructor() {
     this.url = process.env.SUPABASE_URL;
@@ -18,15 +36,29 @@ class SupabaseClient {
 
   // Метод для логирования сделок
   async logTrade(userId, tradeData) {
-    const { data, error } = await this.client.from('trades').insert([
-      {
-        user_id: userId,
-        ...tradeData,
-      },
-    ]);
+    const payload = {
+      user_id: userId,
+      ...tradeData,
+    };
 
-    if (error) throw error;
-    return data;
+    const { data, error } = await this.client.from('trades').insert([payload]);
+
+    if (!error) return data;
+
+    if (this._isMissingTradeContextColumnError(error)) {
+      console.warn('⚠️ Trade context columns missing in Supabase, retrying without context fields');
+      const fallbackPayload = { ...payload };
+      TRADE_CONTEXT_FIELDS.forEach((field) => delete fallbackPayload[field]);
+
+      const { data: fallbackData, error: fallbackError } = await this.client
+        .from('trades')
+        .insert([fallbackPayload]);
+
+      if (fallbackError) throw fallbackError;
+      return fallbackData;
+    }
+
+    throw error;
   }
 
   // Метод для получения дневной статистики
@@ -231,6 +263,14 @@ class SupabaseClient {
       console.error('❌ Supabase connection failed:', error.message);
       return false;
     }
+  }
+
+  _isMissingTradeContextColumnError(error) {
+    const message = error?.message || '';
+    return (
+      error?.code === 'PGRST204' &&
+      TRADE_CONTEXT_FIELDS.some((field) => message.includes(field))
+    );
   }
 }
 

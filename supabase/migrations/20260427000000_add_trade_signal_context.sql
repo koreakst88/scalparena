@@ -1,0 +1,16 @@
+alter table trades
+  add column if not exists strategy text,
+  add column if not exists entry_mode text,
+  add column if not exists market_regime text,
+  add column if not exists signal_confidence numeric,
+  add column if not exists signal_reason text,
+  add column if not exists invalidation_rule text,
+  add column if not exists rsi_at_entry numeric,
+  add column if not exists macd_at_entry numeric,
+  add column if not exists macd_signal_at_entry numeric,
+  add column if not exists macd_histogram_at_entry numeric,
+  add column if not exists macd_bias text,
+  add column if not exists bb_position numeric,
+  add column if not exists bb_width numeric,
+  add column if not exists atr_percent numeric,
+  add column if not exists volume_spike_percentage numeric;

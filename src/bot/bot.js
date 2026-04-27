@@ -30,6 +30,7 @@ class ScalpArenaBot {
     this.scheduler = null;
     this.ready = false;
     this.commandsRegistered = false;
+    this.pendingSignals = new Map();
 
     console.log('✅ ScalpArenaBot initialized');
     this._registerCommands();
@@ -186,6 +187,10 @@ ${diagnostics}
     const top = signals.slice(0, 3);
     for (let i = 0; i < top.length; i++) {
       const signal = top[i];
+      const signalId = this._storePendingSignal(signal);
+      const strategyLabel = this._formatSignalLabel(signal.strategy);
+      const regimeLabel = this._formatSignalLabel(signal.marketRegime);
+      const entryModeLabel = this._formatSignalLabel(signal.entryMode);
       const position = RiskManager.calculatePosition(
         accountBalance,
         signal.entryPrice,
@@ -204,11 +209,16 @@ ${diagnostics}
 
 📊 *${signal.pair}* ${signal.type === 'SHORT' ? '🔴 SHORT' : '🟢 LONG'}
 
+🧠 Strategy: *${strategyLabel}* (${entryModeLabel})
+🌡️ Regime: *${regimeLabel}*
 💰 Цена входа: \`$${signal.entryPrice}\`
+🧾 Причина: ${signal.setupReason}
 🎯 RSI: *${signal.rsi}* ${signal.rsi < 30 ? '(перепродано)' : signal.rsi > 70 ? '(перекуплено)' : ''}
+📉 MACD: *${signal.macdBias}* (hist ${signal.macdHistogram})
 📊 BB Position: *${signal.bbPosition}%* (0=низ, 100=верх)
 🔊 Volume: *${signal.volume}%*
 📏 BB Width: *${signal.bbWidth}%*
+🚫 Invalidation: ${signal.invalidationRule}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✅ *ПАРАМЕТРЫ СДЕЛКИ:*
@@ -229,7 +239,7 @@ ${diagnostics}
               [
                 {
                   text: '🟢 Я открыл позицию',
-                  callback_data: `open_${signal.type}_${signal.pair}_${signal.entryPrice}_${signal.stopLoss}_${signal.takeProfit}`,
+                  callback_data: `open_${signalId}`,
                 },
                 {
                   text: '⏭️ Пропустить',
@@ -511,12 +521,19 @@ ${insights}
 
     if (data.startsWith('open_')) {
       const parts = data.split('_');
+      const pendingSignal = this._getPendingSignal(parts[1]);
       const hasDirection = parts[1] === 'LONG' || parts[1] === 'SHORT';
-      const direction = hasDirection ? parts[1] : 'SHORT';
-      const pair = hasDirection ? parts[2] : parts[1];
-      const entryPrice = parseFloat(hasDirection ? parts[3] : parts[2]);
-      const stopLoss = parseFloat(hasDirection ? parts[4] : parts[3]);
-      const takeProfit = parseFloat(hasDirection ? parts[5] : parts[4]);
+      const isPendingSignalFormat = !hasDirection && parts.length === 2;
+
+      if (!pendingSignal && isPendingSignalFormat) {
+        return this._send(userId, '⏰ Сигнал устарел. Запусти /scan ещё раз.');
+      }
+
+      const direction = pendingSignal?.type || (hasDirection ? parts[1] : 'SHORT');
+      const pair = pendingSignal?.pair || (hasDirection ? parts[2] : parts[1]);
+      const entryPrice = pendingSignal?.entryPrice || parseFloat(hasDirection ? parts[3] : parts[2]);
+      const stopLoss = pendingSignal?.stopLoss || parseFloat(hasDirection ? parts[4] : parts[3]);
+      const takeProfit = pendingSignal?.takeProfit || parseFloat(hasDirection ? parts[5] : parts[4]);
 
       const openPositions = await this.db.getOpenPositions(userId);
       const normalizedPair = this._normalizePair(pair);
@@ -562,6 +579,7 @@ ${insights}
         take_profit: takeProfit,
         max_risk: position.maxLoss,
         status: 'OPEN',
+        ...this._buildTradeContext(pendingSignal),
       });
 
       await this._send(
@@ -729,6 +747,59 @@ Exit:  \`$${price}\`
 
   _normalizePair(pair) {
     return pair?.includes('USDT') ? pair : `${pair}USDT`;
+  }
+
+  _formatSignalLabel(value) {
+    return String(value || 'UNKNOWN').replace(/_/g, ' ');
+  }
+
+  _storePendingSignal(signal) {
+    const id = `sig${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    this.pendingSignals.set(id, {
+      signal,
+      createdAt: Date.now(),
+    });
+
+    this._cleanupPendingSignals();
+    return id;
+  }
+
+  _getPendingSignal(id) {
+    const entry = this.pendingSignals.get(id);
+    return entry?.signal || null;
+  }
+
+  _cleanupPendingSignals() {
+    const maxAgeMs = 60 * 60 * 1000;
+    const now = Date.now();
+
+    for (const [id, entry] of this.pendingSignals.entries()) {
+      if (now - entry.createdAt > maxAgeMs) {
+        this.pendingSignals.delete(id);
+      }
+    }
+  }
+
+  _buildTradeContext(signal) {
+    if (!signal) return {};
+
+    return {
+      strategy: signal.strategy,
+      entry_mode: signal.entryMode,
+      market_regime: signal.marketRegime,
+      signal_confidence: signal.confidence,
+      signal_reason: signal.setupReason,
+      invalidation_rule: signal.invalidationRule,
+      rsi_at_entry: signal.rsi,
+      macd_at_entry: signal.macd,
+      macd_signal_at_entry: signal.macdSignal,
+      macd_histogram_at_entry: signal.macdHistogram,
+      macd_bias: signal.macdBias,
+      bb_position: signal.bbPosition,
+      bb_width: signal.bbWidth,
+      atr_percent: signal.atrPercent,
+      volume_spike_percentage: signal.volume,
+    };
   }
 
   _safe(handler) {

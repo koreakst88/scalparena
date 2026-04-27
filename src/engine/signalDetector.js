@@ -37,6 +37,7 @@ class SignalDetector {
     const bollingerBands = TechnicalIndicators.calculateBollingerBands(prices, 20, 2);
     const volume = TechnicalIndicators.calculateVolumeProfile(candles, 20);
     const atr = TechnicalIndicators.calculateATR(candles, 14);
+    const macd = TechnicalIndicators.calculateMACD(prices);
 
     const currentPrice = current.close;
     const atrPercent = (atr / currentPrice) * 100;
@@ -67,6 +68,10 @@ class SignalDetector {
     const tpDist = Math.abs(currentPrice - takeProfit);
     const riskReward = parseFloat((tpDist / slDist).toFixed(2));
     const confidence = this._calculateConfidence(rsi, bbPosition, volume, direction);
+    const macdBias = this._getMacdBias(macd);
+    const marketRegime = this._getMarketRegime(atrPercent, bbWidth);
+    const setupReason = this._buildSetupReason(direction, rsi, bbPosition, bbWidth, macdBias);
+    const invalidationRule = this._buildInvalidationRule(direction, stopLoss);
 
     return {
       pair,
@@ -86,12 +91,19 @@ class SignalDetector {
       atrPercent: parseFloat(atrPercent.toFixed(2)),
       bbPosition: parseFloat(bbPosition.toFixed(1)),
       bbWidth: parseFloat(bbWidth.toFixed(2)),
+      macd: parseFloat(macd.macd.toFixed(4)),
+      macdSignal: parseFloat(macd.signal.toFixed(4)),
+      macdHistogram: parseFloat(macd.histogram.toFixed(4)),
+      macdBias,
 
       impulse: 0,
 
       confidence,
       strategy: 'MEAN_REVERSION',
       entryMode: this._isExtreme(rsi) ? 'STRONG' : 'STANDARD',
+      marketRegime,
+      setupReason,
+      invalidationRule,
 
       generatedAt: new Date(),
       expiresAt: new Date(Date.now() + 30 * 60 * 1000),
@@ -159,6 +171,40 @@ class SignalDetector {
     else if (volume >= 100) score += 5;
 
     return Math.round(Math.min(score, 100));
+  }
+
+  static _getMacdBias(macd) {
+    if (!macd || macd.macd === 0 && macd.signal === 0 && macd.histogram === 0) {
+      return 'FLAT';
+    }
+
+    if (macd.histogram > 0 && macd.macd > macd.signal) return 'BULLISH';
+    if (macd.histogram < 0 && macd.macd < macd.signal) return 'BEARISH';
+    return 'MIXED';
+  }
+
+  static _getMarketRegime(atrPercent, bbWidth) {
+    if (atrPercent < 1.2 && bbWidth < 3) return 'LOW_VOL_RANGE';
+    if (atrPercent >= 1.2 || bbWidth >= 3) return 'ACTIVE_RANGE';
+    return 'CHOPPY_NOISE';
+  }
+
+  static _buildSetupReason(direction, rsi, bbPosition, bbWidth, macdBias) {
+    const rsiReason = direction === 'LONG'
+      ? `RSI ${rsi.toFixed(1)} в зоне перепроданности`
+      : `RSI ${rsi.toFixed(1)} в зоне перекупленности`;
+
+    const bbReason = direction === 'LONG'
+      ? `цена у нижней BB (${bbPosition.toFixed(1)}%)`
+      : `цена у верхней BB (${bbPosition.toFixed(1)}%)`;
+
+    return `${rsiReason}, ${bbReason}, BB width ${bbWidth.toFixed(2)}%, MACD ${macdBias}`;
+  }
+
+  static _buildInvalidationRule(direction, stopLoss) {
+    return direction === 'LONG'
+      ? `Сценарий отменяется при пробое ниже SL $${stopLoss}`
+      : `Сценарий отменяется при пробое выше SL $${stopLoss}`;
   }
 }
 
