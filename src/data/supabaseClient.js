@@ -143,21 +143,33 @@ class SupabaseClient {
    * Обновить баланс после сделки
    */
   async updateBalance(userId, profitLoss) {
-    // Сначала получить текущий баланс
-    const user = await this.getUser(userId);
-    if (!user) throw new Error('User not found');
+    const { data: user, error: userError } = await this.client
+      .from('users')
+      .select('account_balance')
+      .eq('telegram_id', String(userId))
+      .single();
 
-    const newBalance = RiskManager.updateBalance(user.account_balance, profitLoss);
+    if (userError || !user) {
+      console.error('❌ updateBalance user error:', userError?.message || 'User not found');
+      return null;
+    }
 
-    const { data, error } = await this.client
+    const newBalance = parseFloat(
+      RiskManager.updateBalance(user.account_balance, profitLoss).toFixed(4)
+    );
+
+    const { error } = await this.client
       .from('users')
       .update({
         account_balance: newBalance,
-        last_activity: new Date(),
+        updated_at: new Date().toISOString(),
       })
-      .eq('telegram_id', userId);
+      .eq('telegram_id', String(userId));
 
-    if (error) throw error;
+    if (error) {
+      console.error('❌ updateBalance error:', error.message);
+      return null;
+    }
 
     console.log(`💰 Balance updated: $${user.account_balance} → $${newBalance}`);
     return newBalance;
