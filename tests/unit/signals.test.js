@@ -58,6 +58,8 @@ async function runTest() {
       console.log(`  BB Position:${signal.bbPosition}%`);
       console.log(`  BB Width:   ${signal.bbWidth}%`);
       console.log(`  Regime:     ${signal.marketRegime}`);
+      console.log(`  Strategy:   ${signal.strategy}`);
+      console.log(`  ROC12:      ${signal.roc12}%`);
       console.log(`  Volume:     ${signal.volume}%`);
       console.log(`  Confidence: ${signal.confidence}%`);
       console.log(`  Expires:    ${signal.expiresAt.toLocaleTimeString()}`);
@@ -81,7 +83,7 @@ async function runTest() {
           signal.stopLoss &&
           signal.takeProfit &&
           signal.confidence !== undefined &&
-          signal.strategy === 'MEAN_REVERSION'
+          ['MEAN_REVERSION', 'MOMENTUM'].includes(signal.strategy)
       ),
     },
     {
@@ -101,7 +103,7 @@ async function runTest() {
         ),
     },
     {
-      name: 'Mean Reversion поля присутствуют',
+      name: 'Hybrid strategy поля присутствуют',
       pass: signals.every(
         (signal) =>
           signal.bbPosition !== undefined &&
@@ -109,6 +111,7 @@ async function runTest() {
           signal.slPercent !== undefined &&
           signal.macdBias !== undefined &&
           signal.marketRegime !== undefined &&
+          signal.strategy !== undefined &&
           signal.setupReason !== undefined &&
           signal.invalidationRule !== undefined
       ),

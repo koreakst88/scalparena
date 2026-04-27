@@ -1,17 +1,14 @@
 // src/engine/signalDetector.js
 
 const TechnicalIndicators = require('./indicators');
+const MarketRegimeDetector = require('./marketRegimeDetector');
 
 /**
- * Mean Reversion Strategy
+ * Hybrid Strategy
  *
- * Идея: рынок не двигается линейно. После сильного движения
- * в одну сторону происходит откат к среднему.
- *
- * LONG: цена упала слишком сильно (RSI < 30) -> ждём отскок вверх
- * SHORT: цена выросла слишком сильно (RSI > 70) -> ждём откат вниз
- *
- * Работает в боковике и на спокойном рынке (когда Momentum молчит).
+ * RANGE / LOW VOL -> Mean Reversion
+ * TREND_UP / TREND_DOWN -> Momentum
+ * NOISE -> skip
  */
 
 const RSI_OVERSOLD = 32;
@@ -19,96 +16,28 @@ const RSI_OVERBOUGHT = 68;
 const RSI_EXTREME_LOW = 25;
 const RSI_EXTREME_HIGH = 75;
 
-const BB_TOUCH_PERCENT = 1.5;
 const MIN_VOLUME = 80;
 const MIN_BB_WIDTH = 0.5;
 
-const TP_PERCENT = 0.008;
-const SL_PERCENT = 0.008;
+const MR_TP_PERCENT = 0.008;
+const MR_SL_PERCENT = 0.008;
+const MOMENTUM_TP_PERCENT = 0.012;
+const MOMENTUM_SL_PERCENT = 0.008;
 
 class SignalDetector {
   static detectSignal(pair, candles) {
     if (!candles || candles.length < 20) return null;
 
-    const current = candles[candles.length - 1];
-    const prices = candles.map((candle) => candle.close);
+    const context = this._buildContext(candles);
+    if (!context) return null;
 
-    const rsi = TechnicalIndicators.calculateRSI(prices, 14);
-    const bollingerBands = TechnicalIndicators.calculateBollingerBands(prices, 20, 2);
-    const volume = TechnicalIndicators.calculateVolumeProfile(candles, 20);
-    const atr = TechnicalIndicators.calculateATR(candles, 14);
-    const macd = TechnicalIndicators.calculateMACD(prices);
+    if (context.market.strategy === 'SKIP') return null;
 
-    const currentPrice = current.close;
-    const atrPercent = (atr / currentPrice) * 100;
-    const bbRange = bollingerBands.upper - bollingerBands.lower;
-
-    if (!Number.isFinite(bbRange) || bbRange <= 0 || bollingerBands.middle === 0) {
-      return null;
+    if (context.market.strategy === 'MOMENTUM') {
+      return this._detectMomentum(pair, context);
     }
 
-    const bbWidth = (bbRange / bollingerBands.middle) * 100;
-    const bbPosition = ((currentPrice - bollingerBands.lower) / bbRange) * 100;
-
-    const direction = this._getDirection(rsi, bbPosition, bbWidth, volume);
-    if (!direction) return null;
-
-    let stopLoss;
-    let takeProfit;
-
-    if (direction === 'LONG') {
-      stopLoss = parseFloat((currentPrice * (1 - SL_PERCENT)).toFixed(8));
-      takeProfit = parseFloat((currentPrice * (1 + TP_PERCENT)).toFixed(8));
-    } else {
-      stopLoss = parseFloat((currentPrice * (1 + SL_PERCENT)).toFixed(8));
-      takeProfit = parseFloat((currentPrice * (1 - TP_PERCENT)).toFixed(8));
-    }
-
-    const slDist = Math.abs(currentPrice - stopLoss);
-    const tpDist = Math.abs(currentPrice - takeProfit);
-    const riskReward = parseFloat((tpDist / slDist).toFixed(2));
-    const confidence = this._calculateConfidence(rsi, bbPosition, volume, direction);
-    const macdBias = this._getMacdBias(macd);
-    const marketRegime = this._getMarketRegime(atrPercent, bbWidth);
-    const setupReason = this._buildSetupReason(direction, rsi, bbPosition, bbWidth, macdBias);
-    const invalidationRule = this._buildInvalidationRule(direction, stopLoss);
-
-    return {
-      pair,
-      type: direction,
-      entryPrice: currentPrice,
-
-      stopLoss,
-      takeProfit,
-      tpPercent: parseFloat((TP_PERCENT * 100).toFixed(2)),
-      slPercent: parseFloat((SL_PERCENT * 100).toFixed(2)),
-      riskReward,
-      maxRisk: null,
-
-      rsi: parseFloat(rsi.toFixed(2)),
-      volume: parseFloat(volume.toFixed(2)),
-      atr: parseFloat(atr.toFixed(6)),
-      atrPercent: parseFloat(atrPercent.toFixed(2)),
-      bbPosition: parseFloat(bbPosition.toFixed(1)),
-      bbWidth: parseFloat(bbWidth.toFixed(2)),
-      macd: parseFloat(macd.macd.toFixed(4)),
-      macdSignal: parseFloat(macd.signal.toFixed(4)),
-      macdHistogram: parseFloat(macd.histogram.toFixed(4)),
-      macdBias,
-
-      impulse: 0,
-
-      confidence,
-      strategy: 'MEAN_REVERSION',
-      entryMode: this._isExtreme(rsi) ? 'STRONG' : 'STANDARD',
-      marketRegime,
-      setupReason,
-      invalidationRule,
-
-      generatedAt: new Date(),
-      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
-      status: 'ACTIVE',
-    };
+    return this._detectMeanReversion(pair, context);
   }
 
   static scanAll(provider) {
@@ -127,29 +56,192 @@ class SignalDetector {
     return signals;
   }
 
-  static _getDirection(rsi, bbPosition, bbWidth, volume) {
+  static _buildContext(candles) {
+    const current = candles[candles.length - 1];
+    const prices = candles.map((candle) => candle.close);
+    const rsi = TechnicalIndicators.calculateRSI(prices, 14);
+    const bollingerBands = TechnicalIndicators.calculateBollingerBands(prices, 20, 2);
+    const volume = TechnicalIndicators.calculateVolumeProfile(candles, 20);
+    const atr = TechnicalIndicators.calculateATR(candles, 14);
+    const macd = TechnicalIndicators.calculateMACD(prices);
+    const market = MarketRegimeDetector.detect(candles);
+
+    const currentPrice = current.close;
+    const atrPercent = currentPrice ? (atr / currentPrice) * 100 : 0;
+    const bbRange = bollingerBands.upper - bollingerBands.lower;
+
+    if (!Number.isFinite(bbRange) || bbRange <= 0 || bollingerBands.middle === 0) {
+      return null;
+    }
+
+    const bbWidth = (bbRange / bollingerBands.middle) * 100;
+    const bbPosition = ((currentPrice - bollingerBands.lower) / bbRange) * 100;
+    const macdBias = this._getMacdBias(macd);
+    const candleImpulse = current.open ? ((current.close - current.open) / current.open) * 100 : 0;
+
+    return {
+      candles,
+      current,
+      prices,
+      currentPrice,
+      rsi,
+      bollingerBands,
+      bbPosition,
+      bbWidth,
+      volume,
+      atr,
+      atrPercent,
+      macd,
+      macdBias,
+      candleImpulse,
+      market,
+    };
+  }
+
+  static _detectMeanReversion(pair, context) {
+    const direction = this._getMeanReversionDirection(
+      context.rsi,
+      context.bbPosition,
+      context.bbWidth,
+      context.volume
+    );
+
+    if (!direction) return null;
+
+    const stopLoss = direction === 'LONG'
+      ? parseFloat((context.currentPrice * (1 - MR_SL_PERCENT)).toFixed(8))
+      : parseFloat((context.currentPrice * (1 + MR_SL_PERCENT)).toFixed(8));
+    const takeProfit = direction === 'LONG'
+      ? parseFloat((context.currentPrice * (1 + MR_TP_PERCENT)).toFixed(8))
+      : parseFloat((context.currentPrice * (1 - MR_TP_PERCENT)).toFixed(8));
+
+    const confidence = this._calculateMeanReversionConfidence(
+      context.rsi,
+      context.bbPosition,
+      context.volume,
+      direction
+    );
+
+    return this._buildSignal(pair, context, {
+      direction,
+      strategy: 'MEAN_REVERSION',
+      entryMode: this._isExtreme(context.rsi) ? 'STRONG' : 'STANDARD',
+      stopLoss,
+      takeProfit,
+      tpPercent: MR_TP_PERCENT,
+      slPercent: MR_SL_PERCENT,
+      confidence,
+      setupReason: this._buildMeanReversionReason(direction, context),
+      invalidationRule: this._buildInvalidationRule(direction, stopLoss),
+    });
+  }
+
+  static _detectMomentum(pair, context) {
+    const direction = context.market.regime === 'TREND_UP' ? 'LONG' : 'SHORT';
+    const valid = this._isMomentumEntryValid(direction, context);
+
+    if (!valid) return null;
+
+    const stopLoss = direction === 'LONG'
+      ? parseFloat((context.currentPrice * (1 - MOMENTUM_SL_PERCENT)).toFixed(8))
+      : parseFloat((context.currentPrice * (1 + MOMENTUM_SL_PERCENT)).toFixed(8));
+    const takeProfit = direction === 'LONG'
+      ? parseFloat((context.currentPrice * (1 + MOMENTUM_TP_PERCENT)).toFixed(8))
+      : parseFloat((context.currentPrice * (1 - MOMENTUM_TP_PERCENT)).toFixed(8));
+
+    return this._buildSignal(pair, context, {
+      direction,
+      strategy: 'MOMENTUM',
+      entryMode: 'TREND_FOLLOW',
+      stopLoss,
+      takeProfit,
+      tpPercent: MOMENTUM_TP_PERCENT,
+      slPercent: MOMENTUM_SL_PERCENT,
+      confidence: this._calculateMomentumConfidence(direction, context),
+      setupReason: this._buildMomentumReason(direction, context),
+      invalidationRule: this._buildInvalidationRule(direction, stopLoss),
+    });
+  }
+
+  static _buildSignal(pair, context, config) {
+    const slDist = Math.abs(context.currentPrice - config.stopLoss);
+    const tpDist = Math.abs(context.currentPrice - config.takeProfit);
+    const riskReward = parseFloat((tpDist / slDist).toFixed(2));
+
+    return {
+      pair,
+      type: config.direction,
+      entryPrice: context.currentPrice,
+
+      stopLoss: config.stopLoss,
+      takeProfit: config.takeProfit,
+      tpPercent: parseFloat((config.tpPercent * 100).toFixed(2)),
+      slPercent: parseFloat((config.slPercent * 100).toFixed(2)),
+      riskReward,
+      maxRisk: null,
+
+      rsi: parseFloat(context.rsi.toFixed(2)),
+      volume: parseFloat(context.volume.toFixed(2)),
+      atr: parseFloat(context.atr.toFixed(6)),
+      atrPercent: parseFloat(context.atrPercent.toFixed(2)),
+      bbPosition: parseFloat(context.bbPosition.toFixed(1)),
+      bbWidth: parseFloat(context.bbWidth.toFixed(2)),
+      macd: parseFloat(context.macd.macd.toFixed(4)),
+      macdSignal: parseFloat(context.macd.signal.toFixed(4)),
+      macdHistogram: parseFloat(context.macd.histogram.toFixed(4)),
+      macdBias: context.macdBias,
+      impulse: parseFloat(context.candleImpulse.toFixed(2)),
+      roc12: context.market.roc12,
+      emaSpread: context.market.emaSpread,
+
+      confidence: config.confidence,
+      strategy: config.strategy,
+      entryMode: config.entryMode,
+      marketRegime: context.market.regime,
+      marketRegimeReason: context.market.reason,
+      setupReason: config.setupReason,
+      invalidationRule: config.invalidationRule,
+
+      generatedAt: new Date(),
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+      status: 'ACTIVE',
+    };
+  }
+
+  static _getMeanReversionDirection(rsi, bbPosition, bbWidth, volume) {
     if (volume < MIN_VOLUME) return null;
     if (bbWidth < MIN_BB_WIDTH) return null;
 
     if (rsi <= RSI_EXTREME_LOW) return 'LONG';
     if (rsi >= RSI_EXTREME_HIGH) return 'SHORT';
 
-    if (rsi <= RSI_OVERSOLD && bbPosition <= 20) {
-      return 'LONG';
-    }
-
-    if (rsi >= RSI_OVERBOUGHT && bbPosition >= 80) {
-      return 'SHORT';
-    }
+    if (rsi <= RSI_OVERSOLD && bbPosition <= 20) return 'LONG';
+    if (rsi >= RSI_OVERBOUGHT && bbPosition >= 80) return 'SHORT';
 
     return null;
+  }
+
+  static _isMomentumEntryValid(direction, context) {
+    if (context.volume < MIN_VOLUME) return false;
+
+    if (direction === 'LONG') {
+      if (context.rsi < 45 || context.rsi > 78) return false;
+      if (context.macdBias === 'BEARISH') return false;
+      if (context.currentPrice < context.market.ema20) return false;
+      return context.market.roc12 > 1.2 || context.candleImpulse > 0.25;
+    }
+
+    if (context.rsi > 55 || context.rsi < 22) return false;
+    if (context.macdBias === 'BULLISH') return false;
+    if (context.currentPrice > context.market.ema20) return false;
+    return context.market.roc12 < -1.2 || context.candleImpulse < -0.25;
   }
 
   static _isExtreme(rsi) {
     return rsi <= RSI_EXTREME_LOW || rsi >= RSI_EXTREME_HIGH;
   }
 
-  static _calculateConfidence(rsi, bbPosition, volume, direction) {
+  static _calculateMeanReversionConfidence(rsi, bbPosition, volume, direction) {
     let score = 50;
 
     if (direction === 'LONG') {
@@ -173,6 +265,20 @@ class SignalDetector {
     return Math.round(Math.min(score, 100));
   }
 
+  static _calculateMomentumConfidence(direction, context) {
+    let score = 55;
+    const rocBonus = Math.min(Math.abs(context.market.roc12) / 4, 1) * 15;
+    const trendBonus = Math.min(Math.abs(context.market.emaSpread) / 1.5, 1) * 10;
+    const volumeBonus = Math.max(Math.min((context.volume - 100) / 50, 1), 0) * 10;
+
+    score += rocBonus + trendBonus + volumeBonus;
+
+    if (direction === 'LONG' && context.macdBias === 'BULLISH') score += 10;
+    if (direction === 'SHORT' && context.macdBias === 'BEARISH') score += 10;
+
+    return Math.round(Math.min(score, 100));
+  }
+
   static _getMacdBias(macd) {
     if (!macd || macd.macd === 0 && macd.signal === 0 && macd.histogram === 0) {
       return 'FLAT';
@@ -183,28 +289,31 @@ class SignalDetector {
     return 'MIXED';
   }
 
-  static _getMarketRegime(atrPercent, bbWidth) {
-    if (atrPercent < 1.2 && bbWidth < 3) return 'LOW_VOL_RANGE';
-    if (atrPercent >= 1.2 || bbWidth >= 3) return 'ACTIVE_RANGE';
-    return 'CHOPPY_NOISE';
-  }
-
-  static _buildSetupReason(direction, rsi, bbPosition, bbWidth, macdBias) {
+  static _buildMeanReversionReason(direction, context) {
     const rsiReason = direction === 'LONG'
-      ? `RSI ${rsi.toFixed(1)} в зоне перепроданности`
-      : `RSI ${rsi.toFixed(1)} в зоне перекупленности`;
+      ? `RSI ${context.rsi.toFixed(1)} в зоне перепроданности`
+      : `RSI ${context.rsi.toFixed(1)} в зоне перекупленности`;
 
     const bbReason = direction === 'LONG'
-      ? `цена у нижней BB (${bbPosition.toFixed(1)}%)`
-      : `цена у верхней BB (${bbPosition.toFixed(1)}%)`;
+      ? `цена у нижней BB (${context.bbPosition.toFixed(1)}%)`
+      : `цена у верхней BB (${context.bbPosition.toFixed(1)}%)`;
 
-    return `${rsiReason}, ${bbReason}, BB width ${bbWidth.toFixed(2)}%, MACD ${macdBias}`;
+    return `${rsiReason}, ${bbReason}, ${this._formatLabel(context.market.regime)}, MACD ${context.macdBias}`;
+  }
+
+  static _buildMomentumReason(direction, context) {
+    const trend = direction === 'LONG' ? 'восходящий тренд' : 'нисходящий тренд';
+    return `${trend}: ROC12 ${context.market.roc12}%, EMA spread ${context.market.emaSpread}%, MACD ${context.macdBias}`;
   }
 
   static _buildInvalidationRule(direction, stopLoss) {
     return direction === 'LONG'
       ? `Сценарий отменяется при пробое ниже SL $${stopLoss}`
       : `Сценарий отменяется при пробое выше SL $${stopLoss}`;
+  }
+
+  static _formatLabel(value) {
+    return String(value || 'UNKNOWN').replace(/_/g, ' ');
   }
 }
 

@@ -152,6 +152,7 @@ class ScalpArenaBot {
     if (signals.length === 0) {
       const pairs = this.provider.getPairs().slice(0, 5);
       const TechnicalIndicators = require('../engine/indicators');
+      const MarketRegimeDetector = require('../engine/marketRegimeDetector');
       let diagnostics = '';
 
       for (const pair of pairs) {
@@ -169,7 +170,9 @@ class ScalpArenaBot {
         const bbRange = bb.upper - bb.lower;
         const bbPosition = bbRange > 0 ? (((currentPrice - bb.lower) / bbRange) * 100).toFixed(0) : 'n/a';
         const bbWidth = bb.middle ? (((bb.upper - bb.lower) / bb.middle) * 100).toFixed(1) : 'n/a';
-        diagnostics += `  📊 ${pair}: RSI ${rsi} | BB ${bbPosition}% | Width ${bbWidth}% | Vol ${volume}%\n`;
+        const regime = MarketRegimeDetector.detect(candles);
+        const regimeLabel = this._formatSignalLabel(regime.regime);
+        diagnostics += `  📊 ${pair}: ${regimeLabel} | RSI ${rsi} | BB ${bbPosition}% | Width ${bbWidth}% | Vol ${volume}%\n`;
       }
 
       return this._send(
@@ -177,8 +180,8 @@ class ScalpArenaBot {
         `
 📭 *Сигналов не найдено*
 
-Рынок сейчас не даёт Mean Reversion сетапов.
-Система ищет отскоки от RSI экстремумов (< 32 или > 68) и Bollinger Bands.
+Рынок сейчас не даёт качественных Hybrid сетапов.
+Range → Mean Reversion. Trend → Momentum. Noise → пропуск.
 
 📊 *Топ 5 пар сейчас:*
 ${diagnostics}
@@ -539,7 +542,7 @@ ${insights}
 📚 *СПРАВКА SCALPARENA*
 ════════════════════════════════
 
-/scan — найти сигналы (15 пар)
+/scan — найти Hybrid сигналы (MR + Momentum)
 /rm 10 — RM калькулятор
 /status — открытые позиции
 /exit 91.57 — закрыть позицию
