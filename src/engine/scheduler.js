@@ -99,14 +99,36 @@ class Scheduler {
       return;
     }
 
-    const openPositions = trades.filter((trade) => trade.status === 'OPEN');
-    if (openPositions.length >= RiskManager.getMaxPositions()) {
-      console.log(`📊 User ${userId}: max positions reached, signals queued`);
+    const openPositions = await this.db.getOpenPositions(userId);
+    const openPairs = new Set(
+      openPositions.map((position) => this._normalizePair(position.pair))
+    );
+    const maxPositions = RiskManager.getMaxPositions();
+
+    if (openPositions.length >= maxPositions) {
+      console.log(`📊 User ${userId}: max ${maxPositions} positions reached`);
       return;
     }
 
-    const top = signals.slice(0, 3);
-    await this.bot._send(userId, `🔔 *Авто-скан: найдено ${signals.length} сигнал(ов)*`);
+    const filteredSignals = signals.filter((signal) => {
+      if (openPairs.has(this._normalizePair(signal.pair))) {
+        console.log(`⏭️ Skip ${signal.pair}: already has open position`);
+        return false;
+      }
+      return true;
+    });
+
+    if (filteredSignals.length === 0) {
+      console.log(`📭 User ${userId}: all signals filtered out (existing positions)`);
+      return;
+    }
+
+    const slotsAvailable = maxPositions - openPositions.length;
+    const top = filteredSignals.slice(0, Math.min(3, slotsAvailable));
+    await this.bot._send(
+      userId,
+      `🔔 *Авто-скан: найдено ${filteredSignals.length} сигнал(ов)*`
+    );
 
     for (let i = 0; i < top.length; i++) {
       const signal = top[i];
@@ -251,6 +273,10 @@ class Scheduler {
     const parts = this._getSeoulParts();
     const targetDay = parts.hour < 8 ? parts.day - 1 : parts.day;
     return new Date(Date.UTC(parts.year, parts.month - 1, targetDay, 8 - 9, 0, 0, 0));
+  }
+
+  _normalizePair(pair) {
+    return pair?.includes('USDT') ? pair : `${pair}USDT`;
   }
 
   getStatus() {

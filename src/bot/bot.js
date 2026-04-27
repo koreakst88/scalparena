@@ -518,6 +518,29 @@ ${insights}
       const stopLoss = parseFloat(hasDirection ? parts[4] : parts[3]);
       const takeProfit = parseFloat(hasDirection ? parts[5] : parts[4]);
 
+      const openPositions = await this.db.getOpenPositions(userId);
+      const normalizedPair = this._normalizePair(pair);
+      const existingOnPair = openPositions.find(
+        (position) => this._normalizePair(position.pair) === normalizedPair
+      );
+
+      if (existingOnPair) {
+        return this._send(
+          userId,
+          `⛔ Уже есть открытая позиция на *${pair}*\nЗакрой её сначала через /status`
+        );
+      }
+
+      const maxPositions = RiskManager.getMaxPositions();
+      if (openPositions.length >= maxPositions) {
+        return this._send(
+          userId,
+          `⛔ Максимум *${maxPositions}* позиции одновременно!\n` +
+            `Сейчас открыто: *${openPositions.length}*\n` +
+            'Закрой одну через /status прежде чем открывать новую.'
+        );
+      }
+
       const user = await this.db.getUser(userId);
       const accountBalance = user?.account_balance || 200;
       const slPercent = Math.abs(stopLoss - entryPrice) / entryPrice;
@@ -702,6 +725,10 @@ Exit:  \`$${price}\`
     } catch (e) {
       console.error(`❌ Send plain error to ${chatId}:`, e.message);
     }
+  }
+
+  _normalizePair(pair) {
+    return pair?.includes('USDT') ? pair : `${pair}USDT`;
   }
 
   _safe(handler) {
