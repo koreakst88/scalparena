@@ -111,8 +111,19 @@ Current: \`$${current}\`
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✅ Закрой позицию на Bybit
-Затем напиши: /exit ${current}
-    `
+    `,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: `✅ Закрыть ${position.pair} по $${current}`,
+                callback_data: `close_${position.id}_${current}`,
+              },
+            ],
+          ],
+        },
+      }
     );
   }
 
@@ -138,11 +149,19 @@ SL: \`$${position.stop_loss}\`
 Current: \`$${current}\`
 
 💰 P&L: *$${pnl}*
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-❌ Закрой позицию на Bybit
-Затем: /exit ${current}
-    `
+    `,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: `❌ Закрыть ${position.pair} по $${current}`,
+                callback_data: `close_${position.id}_${current}`,
+              },
+            ],
+          ],
+        },
+      }
     );
   }
 

@@ -290,28 +290,26 @@ ${diagnostics}
     const userId = String(msg.chat.id);
     const positions = await this.db.getOpenPositions(userId);
 
-    if (positions.length === 0) {
-      return this._send(
-        userId,
-        `
-📭 *Нет открытых позиций*
-
-Запусти /scan для поиска сигналов
-      `
-      );
+    if (!positions || positions.length === 0) {
+      return this._send(userId, '📭 Нет открытых позиций');
     }
 
-    for (const position of positions) {
-      const current = this.provider.getCurrentCandle(position.pair);
-      const currentPrice = current?.close || position.entry_price;
-      const directionMultiplier = position.trade_type === 'LONG' ? 1 : -1;
-      const pnl = (
-        ((currentPrice - position.entry_price) / position.entry_price) *
-        position.entry_size *
-        position.leverage *
-        directionMultiplier
-      ).toFixed(2);
+    for (const pos of positions) {
+      const pair = pos.pair.includes('USDT') ? pos.pair : `${pos.pair}USDT`;
+      const candle = this.provider.getCurrentCandle(pair);
+      const current = candle?.close || pos.entry_price;
+      const direction = pos.trade_type || 'SHORT';
+      let pnl;
+
+      if (direction === 'SHORT') {
+        pnl = ((pos.entry_price - current) / pos.entry_price) * pos.entry_size * pos.leverage;
+      } else {
+        pnl = ((current - pos.entry_price) / pos.entry_price) * pos.entry_size * pos.leverage;
+      }
+
+      pnl = parseFloat(pnl.toFixed(4));
       const pnlIcon = pnl >= 0 ? '✅' : '❌';
+      const heldMin = Math.round((Date.now() - new Date(pos.entry_time)) / 60000);
 
       await this._send(
         userId,
@@ -319,17 +317,28 @@ ${diagnostics}
 🔥 *АКТИВНАЯ ПОЗИЦИЯ*
 ════════════════════════════════
 
-*${position.pair}* ${position.trade_type || 'SHORT'}
-Entry: \`$${position.entry_price}\`
-Current: \`$${currentPrice}\`
+*${pos.pair}* ${direction === 'SHORT' ? '🔴 SHORT' : '🟢 LONG'}
+Entry: \`$${pos.entry_price}\`
+Current: \`$${current}\`
+⏱️ Держим: *${heldMin} мин*
 
 💰 P&L: *${pnl >= 0 ? '+' : ''}$${pnl}* ${pnlIcon}
 
-🛑 SL: \`$${position.stop_loss}\`
-🟢 TP: \`$${position.take_profit}\`
-
-Закрыть: /exit ${currentPrice}
-      `
+🛑 SL: \`$${pos.stop_loss}\`
+🟢 TP: \`$${pos.take_profit}\`
+      `,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: `💰 Закрыть ${pos.pair} по $${current}`,
+                  callback_data: `close_${pos.id}_${current}`,
+                },
+              ],
+            ],
+          },
+        }
       );
     }
   }
@@ -550,6 +559,73 @@ Entry: \`$${entryPrice}\`
     } else if (data.startsWith('skip_')) {
       const pair = data.split('_')[1];
       await this._send(userId, `⏭️ Сигнал ${pair} пропущен`);
+    } else if (data.startsWith('close_')) {
+      const parts = data.split('_');
+      const tradeId = parts[1];
+      const price = parseFloat(parts[2]);
+
+      const { data: trade } = await this.db.client
+        .from('trades')
+        .select('*')
+        .eq('id', tradeId)
+        .eq('user_id', userId)
+        .single();
+
+      if (!trade || trade.status !== 'OPEN') {
+        return this._send(userId, '❌ Позиция уже закрыта или не найдена');
+      }
+
+      const direction = trade.trade_type || 'SHORT';
+      let pnl;
+
+      if (direction === 'SHORT') {
+        pnl = ((trade.entry_price - price) / trade.entry_price) * trade.entry_size * trade.leverage;
+      } else {
+        pnl = ((price - trade.entry_price) / trade.entry_price) * trade.entry_size * trade.leverage;
+      }
+
+      const commission = trade.entry_size * 0.002;
+      const netPnl = parseFloat((pnl - commission).toFixed(4));
+
+      await this.db.closePosition(tradeId, {
+        exit_price: price,
+        exit_time: new Date(),
+        exit_reason: 'MANUAL',
+        profit_loss: netPnl,
+        status: 'CLOSED',
+      });
+
+      await this.db.updateBalance(userId, netPnl);
+      const updatedUser = await this.db.getUser(userId);
+
+      const icon = netPnl >= 0 ? '✅' : '❌';
+      await this._send(
+        userId,
+        `
+${icon} *СДЕЛКА ЗАКРЫТА*
+════════════════════════════════
+
+*${trade.pair}* ${direction}
+Entry: \`$${trade.entry_price}\`
+Exit:  \`$${price}\`
+
+💰 P&L: *${netPnl >= 0 ? '+' : ''}$${netPnl}*
+💼 Новый баланс: *$${updatedUser?.account_balance || '—'}*
+
+/stats — посмотреть статистику дня
+  `
+      );
+
+      if (this.monitor) {
+        const recent = await this.db.getTradesSince(
+          userId,
+          new Date(Date.now() - 3 * 60 * 60 * 1000)
+        );
+        await this.monitor.checkCooloff(
+          userId,
+          recent.filter((entry) => entry.status === 'CLOSED').reverse()
+        );
+      }
     } else if (data.startsWith('exit_')) {
       const parts = data.split('_');
       const tradeId = parts[1];
