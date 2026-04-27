@@ -109,6 +109,10 @@ console.log();
 
 console.log('📨 Formatted message:');
 console.log(StatsCalculator.formatMessage(stats));
+console.log();
+
+console.log('🧪 Pattern message:');
+console.log(StatsCalculator.formatPatternMessage(stats, 7));
 
 console.log('\n🎯 Checks:');
 const checks = [
@@ -125,6 +129,10 @@ const checks = [
   { name: 'Setup stats рассчитаны', pass: stats.setup_stats?.length === 2 },
   { name: 'Best regime определён', pass: stats.best_regime?.label === 'LOW_VOL_RANGE' },
   { name: 'MACD stats рассчитаны', pass: stats.macd_bias_stats?.length === 2 },
+  {
+    name: 'Pattern message содержит TOP сетапы',
+    pass: StatsCalculator.formatPatternMessage(stats, 7).includes('ТОП СЕТАПЫ'),
+  },
 ];
 
 checks.forEach((check) => console.log(`   ${check.pass ? '✅' : '❌'} ${check.name}`));

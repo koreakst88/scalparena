@@ -143,6 +143,57 @@ Profit Factor: *${stats.profit_factor}*
     return message;
   }
 
+  /**
+   * Форматировать отдельный отчёт по паттернам за период.
+   */
+  static formatPatternMessage(stats, days = 7) {
+    if (!stats.total_trades) {
+      return `
+🧪 *PATTERN LAB: ${days}D*
+════════════════════════════════
+
+Пока нет закрытых сделок за период.
+Соберём 20-30 сделок — и тут начнётся самое вкусное: какие сетапы кормят, а какие тихо кусают депозит.
+      `.trim();
+    }
+
+    const coverage = stats.context_coverage || {
+      total_trades: stats.total_trades,
+      trades_with_context: 0,
+    };
+
+    let message = `
+🧪 *PATTERN LAB: ${days}D*
+════════════════════════════════
+
+Сделок: *${stats.total_trades}*
+P&L: *${this._formatMoney(stats.total_pnl)}*
+Win Rate: *${stats.win_rate}%*
+Context: *${coverage.trades_with_context}/${coverage.total_trades}*
+    `.trim();
+
+    if (!coverage.trades_with_context) {
+      message += `\n\nНовые context-поля уже включены, но старые сделки их не содержат. Следующие сделки начнут заполнять Pattern Lab автоматически.`;
+      return message;
+    }
+
+    message += `\n\n🏆 *ТОП СЕТАПЫ:*`;
+    message += this._formatPatternRows(stats.setup_stats, 3);
+
+    message += `\n\n⚠️ *СЛАБЫЕ СЕТАПЫ:*`;
+    message += this._formatPatternRows([...(stats.setup_stats || [])].reverse(), 3);
+
+    message += `\n\n🌡️ *REGIME:*`;
+    message += this._formatPatternRows(stats.regime_stats, 4);
+
+    message += `\n\n📉 *MACD BIAS:*`;
+    message += this._formatPatternRows(stats.macd_bias_stats, 4);
+
+    message += `\n\n💡 Минимум для вывода: *20-30 сделок*. До этого смотрим осторожно, без резких поворотов руля.`;
+
+    return message;
+  }
+
   static _buildPatternStats(closed) {
     const tradesWithContext = closed.filter((trade) => {
       return trade.strategy || trade.market_regime || trade.macd_bias || trade.rsi_at_entry;
@@ -229,6 +280,18 @@ Profit Factor: *${stats.profit_factor}*
   static _formatMoney(value) {
     const number = Number(value) || 0;
     return `${number >= 0 ? '+' : ''}$${number.toFixed(4)}`;
+  }
+
+  static _formatPatternRows(rows = [], limit = 3) {
+    const selected = rows.slice(0, limit);
+    if (selected.length === 0) return `\nнет данных`;
+
+    return selected
+      .map((row, index) => {
+        const label = this._formatLabel(row.label);
+        return `\n${index + 1}. *${label}* | ${this._formatMoney(row.pnl)} | WR ${row.win_rate}% | N:${row.trades}`;
+      })
+      .join('');
   }
 }
 

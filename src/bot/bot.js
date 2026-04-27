@@ -65,6 +65,7 @@ class ScalpArenaBot {
     this.bot.onText(/\/rm (.+)/, this._safe((msg, match) => this._onRm(msg, match)));
     this.bot.onText(/\/exit (.+)/, this._safe((msg, match) => this._onExit(msg, match)));
     this.bot.onText(/\/stats/, this._safe((msg) => this._onStats(msg)));
+    this.bot.onText(/\/patterns/, this._safe((msg) => this._onPatterns(msg)));
     this.bot.onText(/\/deposit (.+)/, this._safe((msg, match) => this._onDeposit(msg, match)));
     this.bot.onText(/\/help/, this._safe((msg) => this._onHelp(msg)));
 
@@ -459,6 +460,19 @@ ${insights}
     );
   }
 
+  async _onPatterns(msg) {
+    const userId = String(msg.chat.id);
+    const user = await this.db.getUser(userId);
+    if (!user) return this._send(userId, '❌ Сначала /start');
+
+    const days = 7;
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const trades = await this.db.getTradesSince(userId, since);
+    const stats = StatsCalculator.calculate(trades, user.balance_at_8am || user.account_balance);
+
+    await this._send(userId, StatsCalculator.formatPatternMessage(stats, days));
+  }
+
   async _onDeposit(msg, match) {
     const userId = String(msg.chat.id);
     const amount = parseFloat(match[1]);
@@ -495,6 +509,7 @@ ${insights}
 /status — открытые позиции
 /exit 91.57 — закрыть позицию
 /stats — статистика дня
+/patterns — паттерны за 7 дней
 /deposit 300 — пополнить баланс
 /help — эта справка
 
@@ -505,6 +520,7 @@ ${insights}
 3️⃣ Нажать \`Я открыл позицию\`
 4️⃣ /exit цена → когда закроешь
 5️⃣ /stats → анализ дня
+6️⃣ /patterns → какие сетапы работают
     `
     );
   }
