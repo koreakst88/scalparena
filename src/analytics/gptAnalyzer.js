@@ -55,6 +55,13 @@ class GptAnalyzer {
 - Profit Factor: ${stats.profit_factor}
 - Daily Risk Used: $${stats.daily_risk_used}/$${stats.daily_risk_limit}
 
+ПАТТЕРНЫ СЕТАПОВ:
+- Context Coverage: ${stats.context_coverage?.trades_with_context || 0}/${stats.context_coverage?.total_trades || stats.total_trades}
+- Best Setup: ${JSON.stringify(stats.best_setup || null)}
+- Worst Setup: ${JSON.stringify(stats.worst_setup || null)}
+- Best Regime: ${JSON.stringify(stats.best_regime || null)}
+- Best MACD Bias: ${JSON.stringify(stats.best_macd_bias || null)}
+
 ПРИМЕРЫ СДЕЛОК (до 10):
 ${JSON.stringify(tradeSummary, null, 2)}
 

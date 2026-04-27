@@ -59,6 +59,8 @@ class StatsCalculator {
       exitReasons[reason] = (exitReasons[reason] || 0) + 1;
     });
 
+    const patternStats = this._buildPatternStats(closed);
+
     return {
       ...base,
       best_trade: { pair: bestTrade.pair, pnl: bestTrade.profit_loss },
@@ -68,6 +70,7 @@ class StatsCalculator {
       best_pair: bestPairEntry ? { pair: bestPairEntry[0], ...bestPairEntry[1] } : null,
       worst_pair: worstPairEntry ? { pair: worstPairEntry[0], ...worstPairEntry[1] } : null,
       exit_reasons: exitReasons,
+      ...patternStats,
     };
   }
 
@@ -114,7 +117,118 @@ Profit Factor: *${stats.profit_factor}*
       message += `\n\n📋 *Exits:* TP:${tp} SL:${sl} Timeout:${timeout}`;
     }
 
+    if (stats.context_coverage?.trades_with_context > 0) {
+      message += `\n\n🧪 *СЕТАПЫ:*`;
+      message += `\nContext: *${stats.context_coverage.trades_with_context}/${stats.context_coverage.total_trades}* сделок`;
+
+      if (stats.best_setup) {
+        message += `\nBest Setup: *${this._formatLabel(stats.best_setup.label)}*`;
+        message += `\n  P&L: *${this._formatMoney(stats.best_setup.pnl)}* | WR: *${stats.best_setup.win_rate}%* | N:${stats.best_setup.trades}`;
+      }
+
+      if (stats.worst_setup) {
+        message += `\nWorst Setup: *${this._formatLabel(stats.worst_setup.label)}*`;
+        message += `\n  P&L: *${this._formatMoney(stats.worst_setup.pnl)}* | WR: *${stats.worst_setup.win_rate}%* | N:${stats.worst_setup.trades}`;
+      }
+
+      if (stats.best_regime) {
+        message += `\nRegime: *${this._formatLabel(stats.best_regime.label)}* (${this._formatMoney(stats.best_regime.pnl)})`;
+      }
+
+      if (stats.best_macd_bias) {
+        message += `\nMACD: *${this._formatLabel(stats.best_macd_bias.label)}* (${this._formatMoney(stats.best_macd_bias.pnl)})`;
+      }
+    }
+
     return message;
+  }
+
+  static _buildPatternStats(closed) {
+    const tradesWithContext = closed.filter((trade) => {
+      return trade.strategy || trade.market_regime || trade.macd_bias || trade.rsi_at_entry;
+    });
+
+    if (tradesWithContext.length === 0) {
+      return {
+        context_coverage: {
+          total_trades: closed.length,
+          trades_with_context: 0,
+        },
+      };
+    }
+
+    const setupGroups = this._groupTrades(tradesWithContext, (trade) => {
+      const strategy = trade.strategy || 'UNKNOWN_STRATEGY';
+      const regime = trade.market_regime || 'UNKNOWN_REGIME';
+      const macd = trade.macd_bias || 'UNKNOWN_MACD';
+      return `${strategy} / ${regime} / ${macd}`;
+    });
+
+    const regimeGroups = this._groupTrades(
+      tradesWithContext,
+      (trade) => trade.market_regime || 'UNKNOWN_REGIME'
+    );
+
+    const macdGroups = this._groupTrades(
+      tradesWithContext,
+      (trade) => trade.macd_bias || 'UNKNOWN_MACD'
+    );
+
+    return {
+      context_coverage: {
+        total_trades: closed.length,
+        trades_with_context: tradesWithContext.length,
+      },
+      setup_stats: setupGroups,
+      regime_stats: regimeGroups,
+      macd_bias_stats: macdGroups,
+      best_setup: setupGroups[0] || null,
+      worst_setup: setupGroups[setupGroups.length - 1] || null,
+      best_regime: regimeGroups[0] || null,
+      worst_regime: regimeGroups[regimeGroups.length - 1] || null,
+      best_macd_bias: macdGroups[0] || null,
+      worst_macd_bias: macdGroups[macdGroups.length - 1] || null,
+    };
+  }
+
+  static _groupTrades(trades, getLabel) {
+    const groups = {};
+
+    trades.forEach((trade) => {
+      const label = getLabel(trade);
+      if (!groups[label]) {
+        groups[label] = {
+          label,
+          trades: 0,
+          wins: 0,
+          losses: 0,
+          pnl: 0,
+        };
+      }
+
+      groups[label].trades++;
+      if (trade.profit_loss > 0) groups[label].wins++;
+      if (trade.profit_loss < 0) groups[label].losses++;
+      groups[label].pnl += trade.profit_loss || 0;
+    });
+
+    return Object.values(groups)
+      .map((group) => ({
+        ...group,
+        pnl: parseFloat(group.pnl.toFixed(4)),
+        win_rate: parseFloat(((group.wins / group.trades) * 100).toFixed(1)),
+        avg_pnl: parseFloat((group.pnl / group.trades).toFixed(4)),
+      }))
+      .sort((a, b) => b.pnl - a.pnl);
+  }
+
+  static _formatLabel(value) {
+    return String(value || 'UNKNOWN').replace(/_/g, ' ');
+  }
+
+  static _formatMoney(value) {
+    const number = Number(value) || 0;
+    return `${number >= 0 ? '+' : ''}$${number.toFixed(4)}`;
   }
 }
 
