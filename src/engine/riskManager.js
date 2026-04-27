@@ -8,6 +8,7 @@
  * - Max daily risk: 5% of balance
  * - Max concurrent positions: 2
  * - Cool-off: 30 min after 2 losses, 60 min after 3 losses
+ * - Pair cooldown: 90 min after losing trade on same pair
  * - Leverage: adaptive (10x < $500, 5x < $1000, 2x >= $1000)
  */
 
@@ -19,6 +20,7 @@ const DAILY_RISK_LIMIT = 0.05;
 const MAX_POSITIONS = 2;
 const TP_PERCENT = 0.01;
 const COMMISSION = 0.002;
+const PAIR_LOSS_COOLDOWN_MINUTES = 90;
 
 const MARGIN_TIERS = [
   { maxBalance: 500, margin: 10 },
@@ -183,6 +185,56 @@ class RiskManager {
   }
 
   /**
+   * Проверить cooldown по конкретной паре после убыточной сделки.
+   * @param {Array} recentTrades - закрытые сделки, желательно отсортированные от новых к старым
+   * @param {string} pair - торговая пара
+   * @param {Date} now - текущее время для тестов
+   * @returns {Object} { active, minutes, remainingMinutes, endsAt, reason }
+   */
+  static checkPairCooldown(recentTrades, pair, now = new Date()) {
+    if (!recentTrades || recentTrades.length === 0 || !pair) {
+      return { active: false };
+    }
+
+    const normalizedPair = this._normalizePair(pair);
+    const losingTrade = recentTrades
+      .filter((trade) => {
+        return (
+          this._normalizePair(trade.pair) === normalizedPair &&
+          trade.status === 'CLOSED' &&
+          trade.profit_loss < 0
+        );
+      })
+      .sort((a, b) => {
+        return new Date(b.exit_time || b.updated_at || b.entry_time) -
+          new Date(a.exit_time || a.updated_at || a.entry_time);
+      })[0];
+
+    if (!losingTrade) return { active: false };
+
+    const closedAt = new Date(losingTrade.exit_time || losingTrade.updated_at || losingTrade.entry_time);
+    if (Number.isNaN(closedAt.getTime())) return { active: false };
+
+    const endsAt = new Date(closedAt.getTime() + PAIR_LOSS_COOLDOWN_MINUTES * 60 * 1000);
+
+    if (now >= endsAt) {
+      return { active: false };
+    }
+
+    const remainingMinutes = Math.ceil((endsAt - now) / 60000);
+
+    return {
+      active: true,
+      minutes: PAIR_LOSS_COOLDOWN_MINUTES,
+      remainingMinutes,
+      pair: normalizedPair,
+      lastLoss: losingTrade.profit_loss,
+      endsAt,
+      reason: `${normalizedPair}: убыток ${losingTrade.profit_loss} → пауза ${remainingMinutes} мин`,
+    };
+  }
+
+  /**
    * Рассчитать статистику дня в реальном времени
    * @param {Array} trades - все сделки за день
    * @param {number} startingBalance - баланс на начало дня
@@ -276,6 +328,14 @@ class RiskManager {
 
   static getMaxPositions() {
     return MAX_POSITIONS;
+  }
+
+  static getPairCooldownMinutes() {
+    return PAIR_LOSS_COOLDOWN_MINUTES;
+  }
+
+  static _normalizePair(pair) {
+    return String(pair || '').includes('USDT') ? String(pair) : `${pair}USDT`;
   }
 }
 

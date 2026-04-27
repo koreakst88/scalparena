@@ -171,6 +171,25 @@ class SupabaseClient {
     return data || [];
   }
 
+  async getClosedTradesExitedSince(userId, since) {
+    const sinceIso = since instanceof Date ? since.toISOString() : since;
+
+    const { data, error } = await this.client
+      .from('trades')
+      .select('*')
+      .eq('user_id', String(userId))
+      .eq('status', 'CLOSED')
+      .gte('exit_time', sinceIso)
+      .order('exit_time', { ascending: false });
+
+    if (error) {
+      console.error('❌ getClosedTradesExitedSince error:', error.message);
+      return [];
+    }
+
+    return data || [];
+  }
+
   /**
    * Обновить баланс после сделки
    */

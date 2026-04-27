@@ -129,6 +129,53 @@ cooloffCases.forEach((cooloffCase) => {
   console.log();
 });
 
+console.log('3️⃣.b Pair Cooldown System\n');
+
+const now = new Date('2026-04-27T10:00:00.000Z');
+const pairCooldownActive = RiskManager.checkPairCooldown(
+  [
+    {
+      pair: 'RENDERUSDT',
+      status: 'CLOSED',
+      profit_loss: -0.42,
+      exit_time: '2026-04-27T09:10:00.000Z',
+    },
+  ],
+  'RENDERUSDT',
+  now
+);
+const pairCooldownExpired = RiskManager.checkPairCooldown(
+  [
+    {
+      pair: 'RENDERUSDT',
+      status: 'CLOSED',
+      profit_loss: -0.42,
+      exit_time: '2026-04-27T07:30:00.000Z',
+    },
+  ],
+  'RENDERUSDT',
+  now
+);
+const pairCooldownWin = RiskManager.checkPairCooldown(
+  [
+    {
+      pair: 'RENDERUSDT',
+      status: 'CLOSED',
+      profit_loss: 0.25,
+      exit_time: '2026-04-27T09:10:00.000Z',
+    },
+  ],
+  'RENDERUSDT',
+  now
+);
+
+console.log(
+  `   ${pairCooldownActive.active ? '✅' : '❌'} Убыток 50 мин назад → cooldown ${pairCooldownActive.remainingMinutes} мин`
+);
+console.log(`   ${!pairCooldownExpired.active ? '✅' : '❌'} Убыток 150 мин назад → cooldown истёк`);
+console.log(`   ${!pairCooldownWin.active ? '✅' : '❌'} Прибыльная сделка → cooldown не нужен`);
+console.log();
+
 // ─────────────────────────────────────────
 // TEST 4: Daily Stats
 // ─────────────────────────────────────────
@@ -225,6 +272,9 @@ const checks = [
       { profit_loss: -3 },
     ]).minutes === 60,
   },
+  { name: 'Pair cooldown после убытка активен', pass: pairCooldownActive.active },
+  { name: 'Pair cooldown длится 90 мин', pass: RiskManager.getPairCooldownMinutes() === 90 },
+  { name: 'Pair cooldown истекает', pass: !pairCooldownExpired.active },
   { name: 'Win rate корректный', pass: stats.win_rate === 60 },
 ];
 

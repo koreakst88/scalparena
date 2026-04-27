@@ -145,6 +145,9 @@ class ScalpArenaBot {
     const signals = SignalDetector.scanAll(this.provider);
     const user = await this.db.getUser(userId);
     const accountBalance = user?.account_balance || 200;
+    const openPositions = await this.db.getOpenPositions(userId);
+    const maxPositions = RiskManager.getMaxPositions();
+    const slotsAvailable = maxPositions - openPositions.length;
 
     if (signals.length === 0) {
       const pairs = this.provider.getPairs().slice(0, 5);
@@ -184,8 +187,40 @@ ${diagnostics}
       );
     }
 
+    if (slotsAvailable <= 0) {
+      return this._send(
+        userId,
+        `⛔ Максимум *${maxPositions}* позиции уже открыто.\nЗакрой одну через /status, потом снова /scan.`
+      );
+    }
+
+    const openPairs = new Set(openPositions.map((position) => this._normalizePair(position.pair)));
+    const pairCooldownTrades = await this.db.getClosedTradesExitedSince(
+      userId,
+      new Date(Date.now() - RiskManager.getPairCooldownMinutes() * 60 * 1000)
+    );
+    const tradableSignals = signals.filter((signal) => {
+      if (openPairs.has(this._normalizePair(signal.pair))) return false;
+
+      const pairCooldown = RiskManager.checkPairCooldown(pairCooldownTrades, signal.pair);
+      return !pairCooldown.active;
+    });
+
+    if (tradableSignals.length === 0) {
+      return this._send(
+        userId,
+        `
+📭 *Сигналы есть, но все отфильтрованы защитой*
+
+Причины: уже открыта позиция по паре, достигнут лимит позиций или активен cooldown после убытка.
+
+Cooldown по паре: *${RiskManager.getPairCooldownMinutes()} мин* после убыточной сделки.
+      `
+      );
+    }
+
     // Показать топ 3 сигнала
-    const top = signals.slice(0, 3);
+    const top = tradableSignals.slice(0, Math.min(3, slotsAvailable));
     for (let i = 0; i < top.length; i++) {
       const signal = top[i];
       const signalId = this._storePendingSignal(signal);
@@ -564,6 +599,16 @@ ${insights}
         );
       }
 
+      const pairCooldown = await this._getPairCooldown(userId, pair);
+      if (pairCooldown.active) {
+        return this._send(
+          userId,
+          `⏸️ *${pairCooldown.pair}* на cooldown после убытка.\n` +
+            `Осталось: *${pairCooldown.remainingMinutes} мин*\n` +
+            'Это защита от повторного входа в тот же нож.'
+        );
+      }
+
       const maxPositions = RiskManager.getMaxPositions();
       if (openPositions.length >= maxPositions) {
         return this._send(
@@ -767,6 +812,15 @@ Exit:  \`$${price}\`
 
   _formatSignalLabel(value) {
     return String(value || 'UNKNOWN').replace(/_/g, ' ');
+  }
+
+  async _getPairCooldown(userId, pair) {
+    const trades = await this.db.getClosedTradesExitedSince(
+      userId,
+      new Date(Date.now() - RiskManager.getPairCooldownMinutes() * 60 * 1000)
+    );
+
+    return RiskManager.checkPairCooldown(trades, pair);
   }
 
   _storePendingSignal(signal) {

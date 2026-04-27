@@ -104,6 +104,10 @@ class Scheduler {
       openPositions.map((position) => this._normalizePair(position.pair))
     );
     const maxPositions = RiskManager.getMaxPositions();
+    const pairCooldownTrades = await this.db.getClosedTradesExitedSince(
+      userId,
+      new Date(Date.now() - RiskManager.getPairCooldownMinutes() * 60 * 1000)
+    );
 
     if (openPositions.length >= maxPositions) {
       console.log(`📊 User ${userId}: max ${maxPositions} positions reached`);
@@ -115,6 +119,13 @@ class Scheduler {
         console.log(`⏭️ Skip ${signal.pair}: already has open position`);
         return false;
       }
+
+      const pairCooldown = RiskManager.checkPairCooldown(pairCooldownTrades, signal.pair);
+      if (pairCooldown.active) {
+        console.log(`⏸️ Skip ${signal.pair}: pair cooldown ${pairCooldown.remainingMinutes} min`);
+        return false;
+      }
+
       return true;
     });
 
