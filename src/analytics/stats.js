@@ -4,6 +4,48 @@ const RiskManager = require('../engine/riskManager');
 
 class StatsCalculator {
   /**
+   * Получить детальную аналитику через Supabase RPC.
+   * @param {Object} supabase - SupabaseClient wrapper
+   * @param {string} userId - Telegram user ID
+   * @param {number} days - Days to look back
+   * @returns {Object} Detailed analytics data
+   */
+  static async getDetailedAnalytics(supabase, userId, days = 7) {
+    try {
+      const [
+        topPairs,
+        worstPairs,
+        regimes,
+        strategies,
+        macdBias,
+        rsiZones,
+        holdTimes,
+      ] = await Promise.all([
+        supabase.getTopPairs(userId, days, 3),
+        supabase.getWorstPairs(userId, days, 3),
+        supabase.getRegimeStats(userId, days),
+        supabase.getStrategyStats(userId, days),
+        supabase.getMacdBiasStats(userId, days),
+        supabase.getRsiZoneStats(userId, days),
+        supabase.getHoldTimeStats(userId, days),
+      ]);
+
+      return {
+        topPairs: topPairs || [],
+        worstPairs: worstPairs || [],
+        regimes: regimes || [],
+        strategies: strategies || [],
+        macdBias: macdBias || [],
+        rsiZones: rsiZones || [],
+        holdTimes: holdTimes || [],
+      };
+    } catch (error) {
+      console.error('❌ getDetailedAnalytics error:', error.message || error);
+      return this._emptyDetailedAnalytics();
+    }
+  }
+
+  /**
    * Посчитать полную статистику за период
    * @param {Array} trades - все сделки за период
    * @param {number} startingBalance - баланс на начало периода
@@ -292,6 +334,18 @@ Context: *${coverage.trades_with_context}/${coverage.total_trades}*
         return `\n${index + 1}. *${label}* | ${this._formatMoney(row.pnl)} | WR ${row.win_rate}% | N:${row.trades}`;
       })
       .join('');
+  }
+
+  static _emptyDetailedAnalytics() {
+    return {
+      topPairs: [],
+      worstPairs: [],
+      regimes: [],
+      strategies: [],
+      macdBias: [],
+      rsiZones: [],
+      holdTimes: [],
+    };
   }
 }
 

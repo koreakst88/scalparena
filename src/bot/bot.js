@@ -11,6 +11,7 @@ const PositionMonitor = require('../engine/positionMonitor');
 const Scheduler = require('../engine/scheduler');
 const GptAnalyzer = require('../analytics/gptAnalyzer');
 const StatsCalculator = require('../analytics/stats');
+const { formatDetailedAnalytics } = require('../analytics/formatters');
 
 class ScalpArenaBot {
   constructor() {
@@ -504,11 +505,25 @@ ${insights}
     if (!user) return this._send(userId, '❌ Сначала /start');
 
     const days = 7;
+    const isFull = msg.text?.split(/\s+/)[1] === 'full';
+
+    if (isFull) {
+      await this._sendPlain(userId, '🔄 Собираю детальную аналитику...');
+
+      const analytics = await StatsCalculator.getDetailedAnalytics(this.db, userId, days);
+      const message = formatDetailedAnalytics(analytics, days);
+
+      return this._sendPlainChunks(userId, message);
+    }
+
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const trades = await this.db.getTradesSince(userId, since);
     const stats = StatsCalculator.calculate(trades, user.balance_at_8am || user.account_balance);
 
-    await this._send(userId, StatsCalculator.formatPatternMessage(stats, days));
+    await this._send(
+      userId,
+      `${StatsCalculator.formatPatternMessage(stats, days)}\n\n💡 Детали: /patterns full`
+    );
   }
 
   async _onDeposit(msg, match) {
@@ -807,6 +822,35 @@ Exit:  \`$${price}\`
     } catch (e) {
       console.error(`❌ Send plain error to ${chatId}:`, e.message);
     }
+  }
+
+  async _sendPlainChunks(chatId, text, options = {}) {
+    const maxLength = 3900;
+    const chunks = this._splitMessage(text, maxLength);
+
+    for (const chunk of chunks) {
+      await this._sendPlain(chatId, chunk, options);
+    }
+  }
+
+  _splitMessage(text, maxLength) {
+    if (text.length <= maxLength) return [text];
+
+    const chunks = [];
+    const lines = text.split('\n');
+    let current = '';
+
+    for (const line of lines) {
+      if (`${current}\n${line}`.trim().length > maxLength) {
+        if (current) chunks.push(current);
+        current = line;
+      } else {
+        current = current ? `${current}\n${line}` : line;
+      }
+    }
+
+    if (current) chunks.push(current);
+    return chunks;
   }
 
   _normalizePair(pair) {
