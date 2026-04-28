@@ -21,8 +21,8 @@ class StatsCalculator {
         rsiZones,
         holdTimes,
       ] = await Promise.all([
-        supabase.getTopPairs(userId, days, 3),
-        supabase.getWorstPairs(userId, days, 3),
+        supabase.getTopPairs(userId, days, 2),
+        supabase.getWorstPairs(userId, days, 1),
         supabase.getRegimeStats(userId, days),
         supabase.getStrategyStats(userId, days),
         supabase.getMacdBiasStats(userId, days),

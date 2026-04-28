@@ -138,5 +138,43 @@ const checks = [
 checks.forEach((check) => console.log(`   ${check.pass ? '✅' : '❌'} ${check.name}`));
 
 const allPassed = checks.every((check) => check.pass);
-console.log(`\n${allPassed ? '✅ ALL PASSED' : '❌ SOME FAILED'}\n`);
-process.exit(allPassed ? 0 : 1);
+
+console.log('\n6️⃣  Detailed Analytics RPC Params\n');
+
+const rpcCalls = [];
+const mockSupabase = {
+  getTopPairs: async (userId, days, minTrades) => {
+    rpcCalls.push({ method: 'getTopPairs', userId, days, minTrades });
+    return [];
+  },
+  getWorstPairs: async (userId, days, minTrades) => {
+    rpcCalls.push({ method: 'getWorstPairs', userId, days, minTrades });
+    return [];
+  },
+  getRegimeStats: async () => [],
+  getStrategyStats: async () => [],
+  getMacdBiasStats: async () => [],
+  getRsiZoneStats: async () => [],
+  getHoldTimeStats: async () => [],
+};
+
+StatsCalculator.getDetailedAnalytics(mockSupabase, '376069219', 7)
+  .then(() => {
+    const topCall = rpcCalls.find((call) => call.method === 'getTopPairs');
+    const worstCall = rpcCalls.find((call) => call.method === 'getWorstPairs');
+    const rpcChecks = [
+      { name: 'Top pairs minTrades = 2', pass: topCall?.minTrades === 2 },
+      { name: 'Worst pairs minTrades = 1', pass: worstCall?.minTrades === 1 },
+    ];
+
+    rpcChecks.forEach((check) => console.log(`   ${check.pass ? '✅' : '❌'} ${check.name}`));
+
+    const rpcPassed = rpcChecks.every((check) => check.pass);
+    const finalPassed = allPassed && rpcPassed;
+    console.log(`\n${finalPassed ? '✅ ALL PASSED' : '❌ SOME FAILED'}\n`);
+    process.exit(finalPassed ? 0 : 1);
+  })
+  .catch((error) => {
+    console.error('❌ Detailed analytics test error:', error);
+    process.exit(1);
+  });
