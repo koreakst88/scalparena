@@ -190,6 +190,69 @@ class SupabaseClient {
     return data || [];
   }
 
+  // ============================================
+  // DETAILED ANALYTICS METHODS
+  // ============================================
+
+  async getTopPairs(userId, days = 7, minTrades = 3) {
+    return this._callAnalyticsRpc('get_top_pairs', {
+      p_user_id: String(userId),
+      p_days: days,
+      p_min_trades: minTrades,
+    });
+  }
+
+  async getWorstPairs(userId, days = 7, minTrades = 3) {
+    return this._callAnalyticsRpc('get_worst_pairs', {
+      p_user_id: String(userId),
+      p_days: days,
+      p_min_trades: minTrades,
+    });
+  }
+
+  async getRegimeStats(userId, days = 7) {
+    return this._callAnalyticsRpc('get_regime_stats', {
+      p_user_id: String(userId),
+      p_days: days,
+    });
+  }
+
+  async getStrategyStats(userId, days = 7) {
+    return this._callAnalyticsRpc('get_strategy_stats', {
+      p_user_id: String(userId),
+      p_days: days,
+    });
+  }
+
+  async getMacdBiasStats(userId, days = 7) {
+    return this._callAnalyticsRpc('get_macd_bias_stats', {
+      p_user_id: String(userId),
+      p_days: days,
+    });
+  }
+
+  async getMACDBiasStats(userId, days = 7) {
+    return this.getMacdBiasStats(userId, days);
+  }
+
+  async getRsiZoneStats(userId, days = 7) {
+    return this._callAnalyticsRpc('get_rsi_zone_stats', {
+      p_user_id: String(userId),
+      p_days: days,
+    });
+  }
+
+  async getRSIZoneStats(userId, days = 7) {
+    return this.getRsiZoneStats(userId, days);
+  }
+
+  async getHoldTimeStats(userId, days = 7) {
+    return this._callAnalyticsRpc('get_hold_time_stats', {
+      p_user_id: String(userId),
+      p_days: days,
+    });
+  }
+
   /**
    * Обновить баланс после сделки
    */
@@ -290,6 +353,17 @@ class SupabaseClient {
       error?.code === 'PGRST204' &&
       TRADE_CONTEXT_FIELDS.some((field) => message.includes(field))
     );
+  }
+
+  async _callAnalyticsRpc(name, params) {
+    const { data, error } = await this.client.rpc(name, params);
+
+    if (error) {
+      console.error(`❌ ${name} RPC error:`, error.message || error);
+      return [];
+    }
+
+    return data || [];
   }
 }
 
