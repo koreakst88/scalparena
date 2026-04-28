@@ -513,7 +513,24 @@ ${insights}
       const analytics = await StatsCalculator.getDetailedAnalytics(this.db, userId, days);
       const message = formatDetailedAnalytics(analytics, days);
 
-      return this._sendPlainChunks(userId, message);
+      await this._sendPlainChunks(userId, message);
+
+      try {
+        await this._sendPlain(userId, '🤖 GPT анализирует паттерны...');
+        const insights = await this.analyzer.analyzeDetailedPatterns(analytics);
+
+        await this._sendPlain(
+          userId,
+          `💡 GPT ИНСАЙТЫ
+════════════════════════════════
+
+${insights}`
+        );
+      } catch (error) {
+        console.error('❌ GPT pattern insights error:', error.message);
+      }
+
+      return;
     }
 
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);

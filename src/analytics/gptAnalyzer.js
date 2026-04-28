@@ -87,13 +87,108 @@ ${JSON.stringify(tradeSummary, null, 2)}
   }
 
   /**
+   * Генерировать инсайты по детальной недельной аналитике.
+   * @param {Object} analytics - Detailed analytics data
+   * @returns {Promise<string>} GPT insights
+   */
+  async analyzeDetailedPatterns(analytics) {
+    if (!this.apiKey) {
+      return '⚠️ OpenAI API key не настроен. Добавь OPENAI_API_KEY в .env';
+    }
+
+    if (!this._hasAnalyticsData(analytics)) {
+      return '💡 Пока недостаточно данных для AI-инсайтов. Нужно больше закрытых сделок с context-полями.';
+    }
+
+    const context = {
+      topPairs: this._compactRows(analytics.topPairs, (pair) => ({
+        pair: pair.pair,
+        winRate: pair.win_rate,
+        trades: pair.trades,
+        pnl: pair.total_pnl,
+      })),
+      worstPairs: this._compactRows(analytics.worstPairs, (pair) => ({
+        pair: pair.pair,
+        winRate: pair.win_rate,
+        trades: pair.trades,
+        pnl: pair.total_pnl,
+      })),
+      regimes: this._compactRows(analytics.regimes, (regime) => ({
+        regime: regime.market_regime,
+        winRate: regime.win_rate,
+        trades: regime.trades,
+        pnl: regime.total_pnl,
+      })),
+      strategies: this._compactRows(analytics.strategies, (strategy) => ({
+        strategy: strategy.strategy,
+        winRate: strategy.win_rate,
+        trades: strategy.trades,
+        pnl: strategy.total_pnl,
+      })),
+      macdBias: this._compactRows(analytics.macdBias, (bias) => ({
+        bias: bias.macd_bias,
+        winRate: bias.win_rate,
+        trades: bias.trades,
+        pnl: bias.total_pnl,
+      })),
+      rsiZones: this._compactRows(analytics.rsiZones, (zone) => ({
+        zone: zone.rsi_zone,
+        winRate: zone.win_rate,
+        trades: zone.trades,
+        pnl: zone.total_pnl,
+      })),
+      holdTimes: this._compactRows(analytics.holdTimes, (holdTime) => ({
+        bucket: holdTime.hold_time_bucket,
+        winRate: holdTime.win_rate,
+        trades: holdTime.trades,
+        pnl: holdTime.total_pnl,
+        avgHoldMinutes: holdTime.avg_hold_minutes,
+      })),
+    };
+
+    const prompt = `
+Ты опытный трейдер-аналитик. Проанализируй недельную статистику скальпинг-бота.
+
+ДАННЫЕ:
+${JSON.stringify(context, null, 2)}
+
+Дай 3 конкретных инсайта на русском:
+
+1. 🎯 ЧТО РАБОТАЕТ ЛУЧШЕ ВСЕГО
+- Какая комбинация даёт лучший результат?
+- Какие пары, режимы или зоны самые профитные?
+
+2. ⚠️ ЧТО НЕ РАБОТАЕТ
+- Какие паттерны дают убытки?
+- Что стоит исключить или пересмотреть?
+
+3. 💡 РЕКОМЕНДАЦИЯ НА ЗАВТРА
+- Конкретное действие для улучшения результата.
+- На что обратить внимание в следующих сделках?
+
+Ограничения:
+- Максимум 700 символов.
+- Кратко, конкретно, без воды.
+- Не используй markdown: без *, _, обратных кавычек и квадратных скобок.
+    `.trim();
+
+    try {
+      const response = await this._callOpenAI(prompt, 450);
+      return this._sanitizeTelegramText(response) || '💡 Недостаточно данных для анализа.';
+    } catch (error) {
+      console.error('❌ analyzeDetailedPatterns error:', error.message);
+      return '💡 GPT анализ паттернов временно недоступен.';
+    }
+  }
+
+  /**
    * Вызов OpenAI API
    */
-  _callOpenAI(prompt) {
+  _callOpenAI(prompt, maxTokens = 300) {
     return new Promise((resolve, reject) => {
       const body = JSON.stringify({
         model: this.model,
-        max_tokens: 300,
+        max_tokens: maxTokens,
         messages: [{ role: 'user', content: prompt }],
       });
 
@@ -140,6 +235,22 @@ ${JSON.stringify(tradeSummary, null, 2)}
     return String(text)
       .replace(/[*_`\[\]]/g, '')
       .trim();
+  }
+
+  _compactRows(rows = [], mapper) {
+    return rows.slice(0, 5).map(mapper);
+  }
+
+  _hasAnalyticsData(analytics) {
+    return [
+      analytics?.topPairs,
+      analytics?.worstPairs,
+      analytics?.regimes,
+      analytics?.strategies,
+      analytics?.macdBias,
+      analytics?.rsiZones,
+      analytics?.holdTimes,
+    ].some((rows) => rows && rows.length > 0);
   }
 }
 

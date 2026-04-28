@@ -1,6 +1,7 @@
 // tests/unit/formatters.test.js
 
 const { formatDetailedAnalytics } = require('../../src/analytics/formatters');
+const GptAnalyzer = require('../../src/analytics/gptAnalyzer');
 
 console.log('🧪 Analytics Formatters Test\n');
 
@@ -29,6 +30,8 @@ const analytics = {
 };
 
 const message = formatDetailedAnalytics(analytics, 7);
+const analyzer = new GptAnalyzer();
+const sanitized = analyzer._sanitizeTelegramText('**bad_markdown** [x] `code`');
 console.log(message);
 
 console.log('\n🎯 Checks:');
@@ -38,6 +41,7 @@ const checks = [
   { name: 'Regime label форматируется', pass: message.includes('LOW VOL RANGE') },
   { name: 'Strategy label форматируется', pass: message.includes('MEAN REVERSION') },
   { name: 'Hold time bucket есть', pass: message.includes('15 30M') },
+  { name: 'GPT sanitizer убирает markdown', pass: sanitized === 'badmarkdown x code' },
 ];
 
 checks.forEach((check) => console.log(`   ${check.pass ? '✅' : '❌'} ${check.name}`));
