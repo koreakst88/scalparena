@@ -4,8 +4,6 @@ const SignalDetector = require('./signalDetector');
 const RiskManager = require('./riskManager');
 
 const SCAN_INTERVAL_MS = 15 * 60 * 1000;
-const TRADING_START_HOUR = 8;
-const TRADING_END_HOUR = 24;
 const SEOUL_TIMEZONE = process.env.TIMEZONE || 'Asia/Seoul';
 
 class Scheduler {
@@ -45,11 +43,7 @@ class Scheduler {
   }
 
   async _autoScan() {
-    if (!this._isTradingHours()) {
-      console.log('💤 Outside trading hours, scan skipped');
-      return;
-    }
-
+    // Crypto trades 24/7, so auto-scan should never be blocked by session hours.
     console.log('🔍 Auto-scan triggered...');
     this.lastScanTime = new Date();
 
@@ -272,11 +266,6 @@ class Scheduler {
     };
   }
 
-  _isTradingHours() {
-    const { hour } = this._getSeoulParts();
-    return hour >= TRADING_START_HOUR && hour < TRADING_END_HOUR;
-  }
-
   _getMsUntilNext8am() {
     const now = new Date();
     const parts = this._getSeoulParts(now);
@@ -303,7 +292,7 @@ class Scheduler {
     return {
       lastScan: this.lastScanTime,
       nextScan: new Date(Date.now() + SCAN_INTERVAL_MS),
-      tradingHours: this._isTradingHours(),
+      cryptoMarketOpen: true,
       msUntilReset: this._getMsUntilNext8am(),
     };
   }
