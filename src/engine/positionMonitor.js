@@ -2,6 +2,7 @@
 
 const TechnicalIndicators = require('./indicators');
 const RiskManager = require('./riskManager');
+const { TIMEOUT_SOFT, TIMEOUT_HARD } = require('../config/riskManagement');
 
 const CHECK_INTERVAL_MS = 60 * 1000;
 
@@ -209,16 +210,20 @@ Current: \`$${current}\`
   }
 
   async _checkTimeout(position, minutesHeld, pnl, current = null) {
-    if (minutesHeld >= 60 && !this._alreadyAlerted(position.id, 'TIMEOUT_60')) {
-      this._markAlerted(position.id, 'TIMEOUT_60');
+    if (
+      TIMEOUT_SOFT < TIMEOUT_HARD &&
+      minutesHeld >= TIMEOUT_SOFT &&
+      !this._alreadyAlerted(position.id, `TIMEOUT_${TIMEOUT_SOFT}`)
+    ) {
+      this._markAlerted(position.id, `TIMEOUT_${TIMEOUT_SOFT}`);
 
       await this._sendAlert(
         position.user_id,
         `
-⏰ *TIMEOUT: 1 ЧАС*
+⏰ *TIMEOUT: ${TIMEOUT_SOFT} МИН*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-*${position.pair}* открыта уже *60 мин*
+*${position.pair}* открыта уже *${TIMEOUT_SOFT} мин*
 💰 Текущий P&L: *${pnl >= 0 ? '+' : ''}$${pnl}*
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -237,16 +242,16 @@ Current: \`$${current}\`
       );
     }
 
-    if (minutesHeld >= 90 && !this._alreadyAlerted(position.id, 'TIMEOUT_90')) {
-      this._markAlerted(position.id, 'TIMEOUT_90');
+    if (minutesHeld >= TIMEOUT_HARD && !this._alreadyAlerted(position.id, `TIMEOUT_HARD_${TIMEOUT_HARD}`)) {
+      this._markAlerted(position.id, `TIMEOUT_HARD_${TIMEOUT_HARD}`);
 
       await this._sendAlert(
         position.user_id,
         `
-🚨 *HARD TIMEOUT: 1.5 ЧАСА*
+🚨 *HARD TIMEOUT: ${TIMEOUT_HARD} МИН*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-*${position.pair}* открыта *90 мин* — принудительное закрытие!
+*${position.pair}* открыта *${TIMEOUT_HARD} мин* — принудительное закрытие!
 💰 P&L: *${pnl >= 0 ? '+' : ''}$${pnl}*
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━

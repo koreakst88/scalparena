@@ -1,6 +1,7 @@
 // tests/unit/monitor.test.js
 
 const PositionMonitor = require('../../src/engine/positionMonitor');
+const { TIMEOUT_HARD } = require('../../src/config/riskManagement');
 
 console.log('🧪 Position Monitor Test\n');
 
@@ -78,12 +79,40 @@ async function runDirectionChecks() {
     'LONG'
   );
 
+  const timeoutUpdates = [];
+  const timeoutMonitor = new PositionMonitor(
+    { bot: { sendMessage: async (_userId, text) => alerts.push(text) } },
+    {
+      closePosition: async (id, payload) => timeoutUpdates.push({ id, payload }),
+      updateBalance: async () => {},
+    },
+    mockProvider
+  );
+
+  await timeoutMonitor._checkTimeout(
+    {
+      ...basePosition,
+      id: 'hard-timeout',
+      trade_type: 'LONG',
+      entry_size: 10,
+    },
+    60,
+    -0.5,
+    99.5
+  );
+
   return [
     { name: 'SHORT TP срабатывает ниже take_profit', pass: directionMonitor._alreadyAlerted('short-tp', 'TP') },
     { name: 'SHORT SL срабатывает выше stop_loss', pass: directionMonitor._alreadyAlerted('short-sl', 'SL') },
     { name: 'LONG TP срабатывает выше take_profit', pass: directionMonitor._alreadyAlerted('long-tp', 'TP') },
     { name: 'LONG SL срабатывает ниже stop_loss', pass: directionMonitor._alreadyAlerted('long-sl', 'SL') },
-    { name: 'Отправлено 4 alert-сообщения', pass: alerts.length === 4 },
+    { name: 'Hard timeout = 60 минут', pass: TIMEOUT_HARD === 60 },
+    {
+      name: 'Hard timeout закрывает позицию на 60 минуте',
+      pass: timeoutMonitor._alreadyAlerted('hard-timeout', 'TIMEOUT_HARD_60') &&
+        timeoutUpdates[0]?.payload?.exit_reason === 'TIMEOUT_HARD',
+    },
+    { name: 'Отправлено 5 alert-сообщений', pass: alerts.length === 5 },
   ];
 }
 
