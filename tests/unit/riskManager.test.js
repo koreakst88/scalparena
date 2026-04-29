@@ -258,7 +258,7 @@ const checks = [
     name: 'TP = ровно -1%',
     pass: Math.abs((83.5 - pos200.takeProfit) / 83.5 - 0.01) < 0.0001,
   },
-  { name: 'RR > 1.5 при низком ATR (1.5%)', pass: posLowAtr.riskReward >= 1.5 },
+  { name: 'RR > 1.4 при низком ATR (1.5%) с комиссиями', pass: posLowAtr.riskReward >= 1.4 },
   { name: 'RR > 1.0 при среднем ATR (3.5%)', pass: posMidAtr.riskReward >= 1.0 },
   {
     name: 'Cool-off 2 убытка → 30 мин',

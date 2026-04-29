@@ -2,6 +2,7 @@
 
 const TechnicalIndicators = require('./indicators');
 const RiskManager = require('./riskManager');
+const FeeCalculator = require('./feeCalculator');
 const { TIMEOUT_SOFT, TIMEOUT_HARD } = require('../config/riskManagement');
 
 const CHECK_INTERVAL_MS = 60 * 1000;
@@ -55,35 +56,17 @@ class PositionMonitor {
     if (!liveCandle) return;
 
     const current = liveCandle.close;
-    const entryPrice = position.entry_price;
     const minutesHeld = Math.round(
       (Date.now() - new Date(position.entry_time)) / 60000
     );
     const direction = position.trade_type || 'SHORT';
-    let pnl;
-
-    if (direction === 'SHORT') {
-      pnl = parseFloat(
-        (
-          ((entryPrice - current) / entryPrice) *
-          position.entry_size *
-          position.leverage
-        ).toFixed(4)
-      );
-    } else {
-      pnl = parseFloat(
-        (
-          ((current - entryPrice) / entryPrice) *
-          position.entry_size *
-          position.leverage
-        ).toFixed(4)
-      );
-    }
+    const pnlResult = this._calculatePositionPnl(position, current);
+    const pnl = pnlResult.netPnl;
 
     await this._checkTPHit(position, current, pnl, direction);
     await this._checkSLHit(position, current, pnl, direction);
     await this._checkRSIExit(position, pair, current, pnl);
-    await this._checkTimeout(position, minutesHeld, pnl, current);
+    await this._checkTimeout(position, minutesHeld, pnl, current, pnlResult);
   }
 
   async _checkTPHit(position, current, pnl, direction = 'SHORT') {
@@ -209,7 +192,7 @@ Current: \`$${current}\`
     );
   }
 
-  async _checkTimeout(position, minutesHeld, pnl, current = null) {
+  async _checkTimeout(position, minutesHeld, pnl, current = null, pnlResult = null) {
     if (
       TIMEOUT_SOFT < TIMEOUT_HARD &&
       minutesHeld >= TIMEOUT_SOFT &&
@@ -261,17 +244,20 @@ Current: \`$${current}\`
       );
 
       if (current) {
-        const netPnl = parseFloat((pnl - position.entry_size * 0.002).toFixed(4));
+        const finalPnl = pnlResult || this._calculatePositionPnl(position, current);
 
         await this.db.closePosition(position.id, {
           exit_price: current,
           exit_time: new Date(),
           exit_reason: 'TIMEOUT_HARD',
-          profit_loss: netPnl,
+          profit_loss: finalPnl.netPnl,
           status: 'CLOSED',
+          gross_pnl: finalPnl.grossPnl,
+          entry_fee: finalPnl.entryFee,
+          exit_fee: finalPnl.exitFee,
         });
 
-        await this.db.updateBalance(position.user_id, netPnl);
+        await this.db.updateBalance(position.user_id, finalPnl.netPnl);
       }
     }
   }
@@ -307,6 +293,16 @@ ${cooloff.losses} убытка подряд — дисциплина!
       this.alerted.set(tradeId, new Set());
     }
     this.alerted.get(tradeId).add(type);
+  }
+
+  _calculatePositionPnl(position, exitPrice) {
+    return FeeCalculator.calculatePnL({
+      entryPrice: Number(position.entry_price),
+      exitPrice: Number(exitPrice),
+      margin: Number(position.entry_size),
+      leverage: Number(position.leverage),
+      direction: position.trade_type || 'SHORT',
+    });
   }
 
   async _sendAlert(userId, text, options = {}) {

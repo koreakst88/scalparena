@@ -136,8 +136,28 @@ class SupabaseClient {
       })
       .eq('id', tradeId);
 
-    if (error) throw error;
-    return data;
+    if (!error) return data;
+
+    if (this._isMissingFeeColumnError(error)) {
+      console.warn('⚠️ Fee columns missing in Supabase, retrying close without fee fields');
+      const fallbackExitData = { ...exitData };
+      delete fallbackExitData.gross_pnl;
+      delete fallbackExitData.entry_fee;
+      delete fallbackExitData.exit_fee;
+
+      const { data: fallbackData, error: fallbackError } = await this.client
+        .from('trades')
+        .update({
+          status: 'CLOSED',
+          ...fallbackExitData,
+        })
+        .eq('id', tradeId);
+
+      if (fallbackError) throw fallbackError;
+      return fallbackData;
+    }
+
+    throw error;
   }
 
   // Метод для получения сигналов
@@ -364,6 +384,11 @@ class SupabaseClient {
     }
 
     return data || [];
+  }
+
+  _isMissingFeeColumnError(error) {
+    const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`;
+    return ['gross_pnl', 'entry_fee', 'exit_fee'].some((field) => message.includes(field));
   }
 }
 

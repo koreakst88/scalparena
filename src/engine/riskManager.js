@@ -1,5 +1,7 @@
 // src/engine/riskManager.js
 
+const FeeCalculator = require('./feeCalculator');
+
 /**
  * Risk Management System
  *
@@ -19,7 +21,6 @@
 const DAILY_RISK_LIMIT = 0.05;
 const MAX_POSITIONS = 2;
 const TP_PERCENT = 0.01;
-const COMMISSION = 0.002;
 const PAIR_LOSS_COOLDOWN_MINUTES = 90;
 
 const MARGIN_TIERS = [
@@ -66,13 +67,13 @@ class RiskManager {
     const slPercent = overrides.slPercent ?? this.getSlPercent(atrPercent);
     const tpPercent = overrides.tpPercent ?? TP_PERCENT;
 
-    const maxLoss = parseFloat((notional * slPercent + margin * COMMISSION).toFixed(4));
+    const maxLoss = FeeCalculator.calculateMaxLoss(notional, slPercent);
 
     // SL и TP цены (для SHORT)
     const stopLoss = parseFloat((entryPrice * (1 + slPercent)).toFixed(8));
     const takeProfit = parseFloat((entryPrice * (1 - tpPercent)).toFixed(8));
 
-    const expectedProfit = parseFloat((notional * tpPercent - margin * COMMISSION).toFixed(4));
+    const expectedProfit = FeeCalculator.calculateExpectedProfit(notional, tpPercent);
     const riskReward = parseFloat((expectedProfit / maxLoss).toFixed(2));
 
     return {
@@ -87,7 +88,7 @@ class RiskManager {
       tpPercent: parseFloat((tpPercent * 100).toFixed(2)),
       expectedProfit,
       riskReward,
-      commission: parseFloat((margin * COMMISSION).toFixed(4)),
+      commission: parseFloat((notional * FeeCalculator.getRoundTripFee()).toFixed(4)),
       currentBalance: parseFloat(currentBalance.toFixed(2)),
       dailyLimit: parseFloat((currentBalance * DAILY_RISK_LIMIT).toFixed(2)),
     };
