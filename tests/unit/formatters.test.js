@@ -13,7 +13,9 @@ const analytics = {
     { pair: 'RENDERUSDT', win_rate: 0, trades: 3, total_pnl: -1.44 },
   ],
   regimes: [
-    { market_regime: 'LOW_VOL_RANGE', win_rate: 60, trades: 5, total_pnl: 0.5 },
+    { regime: 'LOW_VOL_RANGE', win_rate: 60, trades: 5, total_pnl: 0.5 },
+    { market_regime: 'TREND_DOWN', win_rate: 40, trades: 2, total_pnl: -0.2 },
+    { regime: 'NULL_REGIME', win_rate: 0, trades: 1, total_pnl: -0.1 },
   ],
   strategies: [
     { strategy: 'MEAN_REVERSION', win_rate: 55, trades: 10, total_pnl: -0.2 },
@@ -38,7 +40,9 @@ console.log('\n🎯 Checks:');
 const checks = [
   { name: 'Header есть', pass: message.includes('ДЕТАЛЬНАЯ АНАЛИТИКА ЗА 7 ДНЕЙ') },
   { name: 'Top pair есть', pass: message.includes('SOLUSDT') },
-  { name: 'Regime label форматируется', pass: message.includes('LOW VOL RANGE') },
+  { name: 'Regime из поля regime выводится как есть', pass: message.includes('LOW_VOL_RANGE') },
+  { name: 'Regime из поля market_regime выводится как есть', pass: message.includes('TREND_DOWN') },
+  { name: 'NULL_REGIME не превращается в UNKNOWN', pass: message.includes('NULL_REGIME') && !message.includes('UNKNOWN') },
   { name: 'Strategy label форматируется', pass: message.includes('MEAN REVERSION') },
   { name: 'Hold time bucket есть', pass: message.includes('15 30M') },
   { name: 'GPT sanitizer убирает markdown', pass: sanitized === 'badmarkdown x code' },

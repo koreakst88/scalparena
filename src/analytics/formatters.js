@@ -16,7 +16,7 @@ function formatDetailedAnalytics(analytics, days = 7) {
   });
 
   appendRows(sections, '🌍 РЕЖИМЫ РЫНКА:', analytics.regimes, (regime) => {
-    return `${formatLabel(regime.market_regime)}: ${formatPercent(regime.win_rate)} WR | ${formatCount(regime.trades)} сделок | ${formatMoney(regime.total_pnl)}`;
+    return `${formatRegimeName(regime)}: ${formatPercent(regime.win_rate)} WR | ${formatCount(regime.trades)} сделок | ${formatMoney(regime.total_pnl)}`;
   });
 
   appendRows(sections, '⚡ СТРАТЕГИИ:', analytics.strategies, (strategy) => {
@@ -70,6 +70,11 @@ function hasAnyRows(analytics) {
 
 function formatLabel(value) {
   return String(value || 'UNKNOWN').replace(/_/g, ' ');
+}
+
+function formatRegimeName(regime) {
+  const name = regime?.market_regime ?? regime?.regime;
+  return name == null ? 'NULL_REGIME' : String(name);
 }
 
 function formatPercent(value) {
