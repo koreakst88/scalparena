@@ -52,8 +52,30 @@ class SignalDetector {
       if (signal) signals.push(signal);
     }
 
-    signals.sort((a, b) => b.confidence - a.confidence);
+    signals.sort((a, b) => this._compareSignals(a, b));
     return signals;
+  }
+
+  static _compareSignals(a, b) {
+    if (b.confidence !== a.confidence) {
+      return b.confidence - a.confidence;
+    }
+
+    const rsiDiff = this._getRsiExtremeness(b) - this._getRsiExtremeness(a);
+    if (rsiDiff !== 0) return rsiDiff;
+
+    const bbDiff = this._getBbExtremeness(b) - this._getBbExtremeness(a);
+    if (bbDiff !== 0) return bbDiff;
+
+    return b.volume - a.volume;
+  }
+
+  static _getRsiExtremeness(signal) {
+    return signal.type === 'SHORT' ? signal.rsi : 100 - signal.rsi;
+  }
+
+  static _getBbExtremeness(signal) {
+    return signal.type === 'SHORT' ? signal.bbPosition : 100 - signal.bbPosition;
   }
 
   static _buildContext(candles) {

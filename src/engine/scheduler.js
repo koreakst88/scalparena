@@ -130,9 +130,21 @@ class Scheduler {
 
     const slotsAvailable = maxPositions - openPositions.length;
     const top = filteredSignals.slice(0, Math.min(3, slotsAvailable));
+
+    console.log(
+      `📊 Signal selection for ${userId}: raw=${signals.length} filtered=${filteredSignals.length} ` +
+      `open=${openPositions.length}/${maxPositions} slots=${slotsAvailable} sending=${top.length}`
+    );
+    console.log(`✅ Selected: ${this._formatSignalListForLogs(top)}`);
+
+    const skipped = filteredSignals.slice(top.length);
+    if (skipped.length > 0) {
+      console.log(`⏭️ Not sent: ${this._formatSignalListForLogs(skipped)}`);
+    }
+
     await this.bot._send(
       userId,
-      `🔔 *Авто-скан: найдено ${filteredSignals.length} сигнал(ов)*`
+      `🔔 *Авто-скан: найдено ${filteredSignals.length} сигнал(ов), отправляю ${top.length} лучших*`
     );
 
     for (let i = 0; i < top.length; i++) {
@@ -286,6 +298,17 @@ class Scheduler {
 
   _normalizePair(pair) {
     return pair?.includes('USDT') ? pair : `${pair}USDT`;
+  }
+
+  _formatSignalListForLogs(signals) {
+    if (!signals.length) return 'none';
+
+    return signals
+      .map((signal) => (
+        `${signal.pair} ${signal.type} conf=${signal.confidence}% ` +
+        `rsi=${Number(signal.rsi).toFixed(1)} bb=${Number(signal.bbPosition).toFixed(1)}%`
+      ))
+      .join(', ');
   }
 
   getStatus() {
