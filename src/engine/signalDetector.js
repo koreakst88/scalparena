@@ -23,6 +23,8 @@ const MR_TP_PERCENT = 0.008;
 const MR_SL_PERCENT = 0.008;
 const MOMENTUM_TP_PERCENT = 0.012;
 const MOMENTUM_SL_PERCENT = 0.008;
+const LOW_VOL_MACD_ALIGNED_BONUS = 10;
+const LOW_VOL_MACD_AGAINST_PENALTY = 15;
 
 class SignalDetector {
   static detectSignal(pair, candles) {
@@ -141,7 +143,8 @@ class SignalDetector {
       context.rsi,
       context.bbPosition,
       context.volume,
-      direction
+      direction,
+      context
     );
 
     return this._buildSignal(pair, context, {
@@ -263,7 +266,7 @@ class SignalDetector {
     return rsi <= RSI_EXTREME_LOW || rsi >= RSI_EXTREME_HIGH;
   }
 
-  static _calculateMeanReversionConfidence(rsi, bbPosition, volume, direction) {
+  static _calculateMeanReversionConfidence(rsi, bbPosition, volume, direction, context = {}) {
     let score = 50;
 
     if (direction === 'LONG') {
@@ -284,7 +287,37 @@ class SignalDetector {
     if (volume >= 120) score += 10;
     else if (volume >= 100) score += 5;
 
-    return Math.round(Math.min(score, 100));
+    score += this._getLowVolMacdAdjustment(direction, context);
+
+    return Math.round(Math.min(Math.max(score, 0), 100));
+  }
+
+  static _getLowVolMacdAdjustment(direction, context = {}) {
+    if (context.market?.regime !== 'LOW_VOL_RANGE') return 0;
+
+    if (this._isMacdAlignedWithDirection(direction, context.macdBias)) {
+      return LOW_VOL_MACD_ALIGNED_BONUS;
+    }
+
+    if (this._isMacdAgainstDirection(direction, context.macdBias)) {
+      return -LOW_VOL_MACD_AGAINST_PENALTY;
+    }
+
+    return 0;
+  }
+
+  static _isMacdAlignedWithDirection(direction, macdBias) {
+    return (
+      direction === 'LONG' && macdBias === 'BULLISH' ||
+      direction === 'SHORT' && macdBias === 'BEARISH'
+    );
+  }
+
+  static _isMacdAgainstDirection(direction, macdBias) {
+    return (
+      direction === 'LONG' && macdBias === 'BEARISH' ||
+      direction === 'SHORT' && macdBias === 'BULLISH'
+    );
   }
 
   static _calculateMomentumConfidence(direction, context) {
