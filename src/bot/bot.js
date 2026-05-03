@@ -43,9 +43,8 @@ class ScalpArenaBot {
 
     this._registerCommands();
 
-    // Инициализировать провайдер данных
+    // Инициализировать минимальный provider state синхронно, но не блокировать bot startup backfill'ом.
     await this.provider.validatePairs();
-    await this.provider.backfillAll('60');
     this.provider.connect();
     this.ready = true;
 
@@ -59,6 +58,20 @@ class ScalpArenaBot {
     this.scheduler.start();
 
     console.log('✅ Bot ready!');
+    this._startBackfillInBackground();
+  }
+
+  _startBackfillInBackground() {
+    console.log('📥 Starting market backfill in background...');
+
+    this.provider
+      .backfillAll('60')
+      .then(() => {
+        console.log('✅ Background backfill completed');
+      })
+      .catch((error) => {
+        console.error('❌ Background backfill failed:', error?.message || error);
+      });
   }
 
   _registerCommands() {
