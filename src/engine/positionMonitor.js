@@ -16,13 +16,13 @@ class PositionMonitor {
     this.alerted = new Map();
   }
 
-  start() {
+  async start() {
     if (this.timer) return;
     console.log('🔍 Position monitor started');
     console.log('✅ Position monitor: ACTIVE, checking every 60s');
 
     // Run once immediately so startup logs prove the monitor is alive.
-    this._checkAll();
+    await this._checkAll();
     this.timer = setInterval(() => this._checkAll(), CHECK_INTERVAL_MS);
   }
 
