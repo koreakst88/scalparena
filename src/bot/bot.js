@@ -51,6 +51,7 @@ class ScalpArenaBot {
 
     this.monitor = new PositionMonitor(this, this.db, this.provider);
     this.monitor.start();
+    console.log('✅ Bot startup: PositionMonitor initialized and started');
 
     this.scheduler = new Scheduler(this, this.db, this.provider);
     this.scheduler.start();

@@ -19,6 +19,10 @@ class PositionMonitor {
   start() {
     if (this.timer) return;
     console.log('🔍 Position monitor started');
+    console.log('✅ Position monitor: ACTIVE, checking every 60s');
+
+    // Run once immediately so startup logs prove the monitor is alive.
+    this._checkAll();
     this.timer = setInterval(() => this._checkAll(), CHECK_INTERVAL_MS);
   }
 
@@ -37,7 +41,14 @@ class PositionMonitor {
         .select('*')
         .eq('status', 'OPEN');
 
-      if (error || !positions?.length) return;
+      if (error) {
+        console.error('❌ Monitor query error:', error.message);
+        return;
+      }
+
+      console.log(`🔍 Position monitor heartbeat: ${positions?.length || 0} open position(s)`);
+
+      if (!positions?.length) return;
 
       for (const position of positions) {
         await this._checkPosition(position);
