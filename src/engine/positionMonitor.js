@@ -74,20 +74,23 @@ class PositionMonitor {
     const pnlResult = this._calculatePositionPnl(position, current);
     const pnl = pnlResult.netPnl;
 
-    await this._checkTPHit(position, current, pnl, direction);
-    await this._checkSLHit(position, current, pnl, direction);
+    if (await this._checkTPHit(position, current, pnl, direction, pnlResult)) return;
+    if (await this._checkSLHit(position, current, pnl, direction, pnlResult)) return;
+
     await this._checkRSIExit(position, pair, current, pnl);
     await this._checkTimeout(position, minutesHeld, pnl, current, pnlResult);
   }
 
-  async _checkTPHit(position, current, pnl, direction = 'SHORT') {
+  async _checkTPHit(position, current, pnl, direction = 'SHORT', pnlResult = null) {
     const tpHit = direction === 'SHORT'
       ? current <= position.take_profit
       : current >= position.take_profit;
 
-    if (!tpHit) return;
-    if (this._alreadyAlerted(position.id, 'TP')) return;
+    if (!tpHit) return false;
+    if (this._alreadyAlerted(position.id, 'TP')) return true;
 
+    const finalPnl = pnlResult || this._calculatePositionPnl(position, current);
+    await this._closeTrade(position, current, 'TP_HIT', finalPnl);
     this._markAlerted(position.id, 'TP');
 
     await this._sendAlert(
@@ -102,34 +105,28 @@ TP: \`$${position.take_profit}\`
 Current: \`$${current}\`
 
 💰 P&L: *+$${Math.abs(pnl)}*
+💸 Fees: *$${finalPnl.totalFees}*
 ⏱️ Время: *${Math.round((Date.now() - new Date(position.entry_time)) / 60000)} мин*
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ Закрой позицию на Bybit
-    `,
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: `✅ Закрыть ${position.pair} по $${current}`,
-                callback_data: `close_${position.id}_${current}`,
-              },
-            ],
-          ],
-        },
-      }
+✅ Позиция закрыта в журнале автоматически
+Баланс обновлён
+    `
     );
+
+    return true;
   }
 
-  async _checkSLHit(position, current, pnl, direction = 'SHORT') {
+  async _checkSLHit(position, current, pnl, direction = 'SHORT', pnlResult = null) {
     const slHit = direction === 'SHORT'
       ? current >= position.stop_loss
       : current <= position.stop_loss;
 
-    if (!slHit) return;
-    if (this._alreadyAlerted(position.id, 'SL')) return;
+    if (!slHit) return false;
+    if (this._alreadyAlerted(position.id, 'SL')) return true;
 
+    const finalPnl = pnlResult || this._calculatePositionPnl(position, current);
+    await this._closeTrade(position, current, 'STOP_HIT', finalPnl);
     this._markAlerted(position.id, 'SL');
 
     await this._sendAlert(
@@ -144,20 +141,15 @@ SL: \`$${position.stop_loss}\`
 Current: \`$${current}\`
 
 💰 P&L: *$${pnl}*
-    `,
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: `❌ Закрыть ${position.pair} по $${current}`,
-                callback_data: `close_${position.id}_${current}`,
-              },
-            ],
-          ],
-        },
-      }
+💸 Fees: *$${finalPnl.totalFees}*
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+❌ Позиция закрыта в журнале автоматически
+Баланс обновлён
+    `
     );
+
+    return true;
   }
 
   async _checkRSIExit(position, pair, current, pnl) {
@@ -257,18 +249,7 @@ Current: \`$${current}\`
       if (current) {
         const finalPnl = pnlResult || this._calculatePositionPnl(position, current);
 
-        await this.db.closePosition(position.id, {
-          exit_price: current,
-          exit_time: new Date(),
-          exit_reason: 'TIMEOUT_HARD',
-          profit_loss: finalPnl.netPnl,
-          status: 'CLOSED',
-          gross_pnl: finalPnl.grossPnl,
-          entry_fee: finalPnl.entryFee,
-          exit_fee: finalPnl.exitFee,
-        });
-
-        await this.db.updateBalance(position.user_id, finalPnl.netPnl);
+        await this._closeTrade(position, current, 'TIMEOUT_HARD', finalPnl);
       }
     }
   }
@@ -314,6 +295,30 @@ ${cooloff.losses} убытка подряд — дисциплина!
       leverage: Number(position.leverage),
       direction: position.trade_type || 'SHORT',
     });
+  }
+
+  async _closeTrade(position, exitPrice, exitReason, pnlResult = null) {
+    const finalPnl = pnlResult || this._calculatePositionPnl(position, exitPrice);
+
+    await this.db.closePosition(position.id, {
+      exit_price: exitPrice,
+      exit_time: new Date(),
+      exit_reason: exitReason,
+      profit_loss: finalPnl.netPnl,
+      status: 'CLOSED',
+      gross_pnl: finalPnl.grossPnl,
+      entry_fee: finalPnl.entryFee,
+      exit_fee: finalPnl.exitFee,
+    });
+
+    await this.db.updateBalance(position.user_id, finalPnl.netPnl);
+
+    console.log(
+      `✅ Auto-closed ${position.pair} ${position.trade_type || 'SHORT'} ` +
+      `reason=${exitReason} net=${finalPnl.netPnl}`
+    );
+
+    return finalPnl;
   }
 
   async _sendAlert(userId, text, options = {}) {

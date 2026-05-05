@@ -38,9 +38,14 @@ console.log('\n2️⃣  Direction-aware TP/SL test');
 
 async function runDirectionChecks() {
   const alerts = [];
+  const closeUpdates = [];
+  const balanceUpdates = [];
   const directionMonitor = new PositionMonitor(
     { bot: { sendMessage: async (_userId, text) => alerts.push(text) } },
-    mockDb,
+    {
+      closePosition: async (id, payload) => closeUpdates.push({ id, payload }),
+      updateBalance: async (userId, pnl) => balanceUpdates.push({ userId, pnl }),
+    },
     mockProvider
   );
 
@@ -106,6 +111,13 @@ async function runDirectionChecks() {
     { name: 'SHORT SL срабатывает выше stop_loss', pass: directionMonitor._alreadyAlerted('short-sl', 'SL') },
     { name: 'LONG TP срабатывает выше take_profit', pass: directionMonitor._alreadyAlerted('long-tp', 'TP') },
     { name: 'LONG SL срабатывает ниже stop_loss', pass: directionMonitor._alreadyAlerted('long-sl', 'SL') },
+    {
+      name: 'TP/SL автоматически закрывают сделки в БД',
+      pass: closeUpdates.length === 4 &&
+        closeUpdates.filter((entry) => entry.payload.exit_reason === 'TP_HIT').length === 2 &&
+        closeUpdates.filter((entry) => entry.payload.exit_reason === 'STOP_HIT').length === 2,
+    },
+    { name: 'TP/SL обновляют баланс', pass: balanceUpdates.length === 4 },
     { name: 'Hard timeout = 60 минут', pass: TIMEOUT_HARD === 60 },
     {
       name: 'Hard timeout закрывает позицию на 60 минуте',
