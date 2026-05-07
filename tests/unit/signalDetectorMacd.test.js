@@ -57,6 +57,12 @@ const activeRangeShort = SignalDetector._calculateMeanReversionConfidence(
   activeRange('BEARISH')
 );
 
+const strongLongAllowed = SignalDetector._getMeanReversionDirection(24.9, 10, 1, 151);
+const weakLongBlocked = SignalDetector._getMeanReversionDirection(25, 10, 1, 151);
+const strongShortAllowed = SignalDetector._getMeanReversionDirection(73, 90, 1, 151);
+const weakShortBlocked = SignalDetector._getMeanReversionDirection(72, 90, 1, 151);
+const weakVolumeBlocked = SignalDetector._getMeanReversionDirection(20, 5, 1, 149);
+
 console.log(`   SHORT aligned: ${shortAligned}`);
 console.log(`   SHORT mixed:   ${shortMixed}`);
 console.log(`   SHORT against: ${shortAgainst}`);
@@ -92,6 +98,18 @@ const checks = [
     name: 'MACD alignment helper для LONG корректный',
     pass: SignalDetector._isMacdAlignedWithDirection('LONG', 'BULLISH') &&
       !SignalDetector._isMacdAlignedWithDirection('LONG', 'BEARISH'),
+  },
+  {
+    name: 'MR LONG разрешён только при RSI <25',
+    pass: strongLongAllowed === 'LONG' && weakLongBlocked === null,
+  },
+  {
+    name: 'MR SHORT разрешён только при RSI >72',
+    pass: strongShortAllowed === 'SHORT' && weakShortBlocked === null,
+  },
+  {
+    name: 'MR блокирует volume ниже 150%',
+    pass: weakVolumeBlocked === null,
   },
 ];
 

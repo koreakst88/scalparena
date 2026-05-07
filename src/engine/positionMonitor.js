@@ -77,7 +77,7 @@ class PositionMonitor {
     if (await this._checkTPHit(position, current, pnl, direction, pnlResult)) return;
     if (await this._checkSLHit(position, current, pnl, direction, pnlResult)) return;
 
-    await this._checkRSIExit(position, pair, current, pnl);
+    if (await this._checkRSIExit(position, pair, current, pnl, pnlResult)) return;
     await this._checkTimeout(position, minutesHeld, pnl, current, pnlResult);
   }
 
@@ -152,18 +152,24 @@ Current: \`$${current}\`
     return true;
   }
 
-  async _checkRSIExit(position, pair, current, pnl) {
-    if (this._alreadyAlerted(position.id, 'RSI')) return;
-    if (pnl <= 0.2) return;
+  async _checkRSIExit(position, pair, current, pnl, pnlResult = null) {
+    if (this._alreadyAlerted(position.id, 'RSI')) return false;
+    if (pnl <= 0) return false;
 
     const candles = this.provider.getCandles(pair, 20);
-    if (candles.length < 15) return;
+    if (candles.length < 15) return false;
 
     const prices = candles.map((candle) => candle.close);
     const rsi = TechnicalIndicators.calculateRSI(prices, 14);
+    const direction = position.trade_type || 'SHORT';
+    const shouldExit = direction === 'LONG'
+      ? rsi >= 65
+      : rsi <= 35;
 
-    if (rsi < 75) return;
+    if (!shouldExit) return false;
 
+    const finalPnl = pnlResult || this._calculatePositionPnl(position, current);
+    await this._closeTrade(position, current, 'RSI_EXIT', finalPnl);
     this._markAlerted(position.id, 'RSI');
 
     await this._sendAlert(
@@ -172,27 +178,20 @@ Current: \`$${current}\`
 ⚡ *RSI СИГНАЛ ВЫХОДА*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-*${position.pair}* ${position.trade_type || 'SHORT'}
-RSI: *${rsi.toFixed(1)}* (> 75 — перекупленность)
+*${position.pair}* ${direction}
+RSI: *${rsi.toFixed(1)}* ${direction === 'LONG' ? '(> 65)' : '(< 35)'}
 
 Current: \`$${current}\`
-💰 Текущий P&L: *+$${pnl}*
+💰 P&L: *+$${pnl}*
+💸 Fees: *$${finalPnl.totalFees}*
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚡ Рекомендуем зафиксировать прибыль
-/exit ${current}
-    `,
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: '✅ Закрыть сейчас', callback_data: `exit_${position.id}_${current}` },
-              { text: '⏳ Подождать ещё', callback_data: `hold_${position.id}` },
-            ],
-          ],
-        },
-      }
+⚡ Быстрый RSI-отскок зафиксирован автоматически
+Баланс обновлён
+    `
     );
+
+    return true;
   }
 
   async _checkTimeout(position, minutesHeld, pnl, current = null, pnlResult = null) {

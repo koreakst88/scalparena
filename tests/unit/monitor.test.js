@@ -106,6 +106,35 @@ async function runDirectionChecks() {
     99.5
   );
 
+  const rsiCloseUpdates = [];
+  const rsiBalanceUpdates = [];
+  const createRsiMonitor = (prices) => new PositionMonitor(
+    { bot: { sendMessage: async (_userId, text) => alerts.push(text) } },
+    {
+      closePosition: async (id, payload) => rsiCloseUpdates.push({ id, payload }),
+      updateBalance: async (userId, pnl) => rsiBalanceUpdates.push({ userId, pnl }),
+    },
+    {
+      getCandles: () => prices.map((close) => ({ close })),
+    }
+  );
+
+  const longRsiMonitor = createRsiMonitor(Array.from({ length: 20 }, (_, index) => 100 + index));
+  await longRsiMonitor._checkRSIExit(
+    { ...basePosition, id: 'long-rsi', trade_type: 'LONG' },
+    'SOLUSDT',
+    101,
+    0.5
+  );
+
+  const shortRsiMonitor = createRsiMonitor(Array.from({ length: 20 }, (_, index) => 120 - index));
+  await shortRsiMonitor._checkRSIExit(
+    { ...basePosition, id: 'short-rsi', trade_type: 'SHORT' },
+    'SOLUSDT',
+    99,
+    0.5
+  );
+
   return [
     { name: 'SHORT TP срабатывает ниже take_profit', pass: directionMonitor._alreadyAlerted('short-tp', 'TP') },
     { name: 'SHORT SL срабатывает выше stop_loss', pass: directionMonitor._alreadyAlerted('short-sl', 'SL') },
@@ -124,7 +153,13 @@ async function runDirectionChecks() {
       pass: timeoutMonitor._alreadyAlerted('hard-timeout', 'TIMEOUT_HARD_60') &&
         timeoutUpdates[0]?.payload?.exit_reason === 'TIMEOUT_HARD',
     },
-    { name: 'Отправлено 5 alert-сообщений', pass: alerts.length === 5 },
+    {
+      name: 'RSI exit автоматически закрывает LONG и SHORT',
+      pass: rsiCloseUpdates.length === 2 &&
+        rsiCloseUpdates.every((entry) => entry.payload.exit_reason === 'RSI_EXIT'),
+    },
+    { name: 'RSI exit обновляет баланс', pass: rsiBalanceUpdates.length === 2 },
+    { name: 'Отправлено 7 alert-сообщений', pass: alerts.length === 7 },
   ];
 }
 

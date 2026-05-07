@@ -11,13 +11,11 @@ const MarketRegimeDetector = require('./marketRegimeDetector');
  * NOISE -> skip
  */
 
-const RSI_OVERSOLD = 32;
-const RSI_OVERBOUGHT = 68;
-const RSI_EXTREME_LOW = 25;
-const RSI_EXTREME_HIGH = 75;
-
 const MIN_VOLUME = 80;
+const MIN_MR_VOLUME = 150;
 const MIN_BB_WIDTH = 0.5;
+const MR_LONG_RSI_MAX = 25;
+const MR_SHORT_RSI_MIN = 72;
 
 const MR_TP_PERCENT = 0.008;
 const MR_SL_PERCENT = 0.008;
@@ -234,14 +232,11 @@ class SignalDetector {
   }
 
   static _getMeanReversionDirection(rsi, bbPosition, bbWidth, volume) {
-    if (volume < MIN_VOLUME) return null;
+    if (volume < MIN_MR_VOLUME) return null;
     if (bbWidth < MIN_BB_WIDTH) return null;
 
-    if (rsi <= RSI_EXTREME_LOW) return 'LONG';
-    if (rsi >= RSI_EXTREME_HIGH) return 'SHORT';
-
-    if (rsi <= RSI_OVERSOLD && bbPosition <= 20) return 'LONG';
-    if (rsi >= RSI_OVERBOUGHT && bbPosition >= 80) return 'SHORT';
+    if (rsi < MR_LONG_RSI_MAX && bbPosition <= 20) return 'LONG';
+    if (rsi > MR_SHORT_RSI_MIN && bbPosition >= 80) return 'SHORT';
 
     return null;
   }
@@ -263,29 +258,25 @@ class SignalDetector {
   }
 
   static _isExtreme(rsi) {
-    return rsi <= RSI_EXTREME_LOW || rsi >= RSI_EXTREME_HIGH;
+    return rsi < MR_LONG_RSI_MAX || rsi > MR_SHORT_RSI_MIN;
   }
 
   static _calculateMeanReversionConfidence(rsi, bbPosition, volume, direction, context = {}) {
-    let score = 50;
+    let score = 40;
 
     if (direction === 'LONG') {
-      if (rsi <= 20) score += 25;
-      else if (rsi <= 25) score += 20;
-      else if (rsi <= 30) score += 15;
-      else if (rsi <= 32) score += 10;
+      if (rsi < 20) score += 25;
+      else if (rsi < MR_LONG_RSI_MAX) score += 20;
     } else {
-      if (rsi >= 80) score += 25;
-      else if (rsi >= 75) score += 20;
-      else if (rsi >= 70) score += 15;
-      else if (rsi >= 68) score += 10;
+      if (rsi > 80) score += 25;
+      else if (rsi > MR_SHORT_RSI_MIN) score += 20;
     }
 
     if (direction === 'LONG' && bbPosition <= 10) score += 10;
     if (direction === 'SHORT' && bbPosition >= 90) score += 10;
 
-    if (volume >= 120) score += 10;
-    else if (volume >= 100) score += 5;
+    if (volume >= 200) score += 10;
+    else if (volume >= MIN_MR_VOLUME) score += 5;
 
     score += this._getLowVolMacdAdjustment(direction, context);
 
