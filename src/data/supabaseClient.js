@@ -273,6 +273,13 @@ class SupabaseClient {
     });
   }
 
+  async getExitReasonStats(userId, days = 7) {
+    return this._callAnalyticsRpc('get_exit_reason_stats', {
+      p_user_id: String(userId),
+      p_days: days,
+    });
+  }
+
   /**
    * Обновить баланс после сделки
    */

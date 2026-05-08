@@ -38,6 +38,12 @@ function formatDetailedAnalytics(analytics, days = 7) {
     return `${formatLabel(time.hold_time_bucket)}: ${formatPercent(time.win_rate)} WR | ${formatCount(time.trades)} сделок | ${formatMoney(time.total_pnl)}${avgHold}`;
   });
 
+  appendRows(sections, '📤 EXIT REASONS:', analytics.exitReasons, (exitReason) => {
+    const share = calculateShare(exitReason.trades, analytics.exitReasons);
+    const emoji = getPnlEmoji(exitReason.total_pnl);
+    return `${formatExitReason(exitReason.exit_reason)}: ${formatPercent(share)} | ${formatCount(exitReason.trades)} сделок | ${formatPercent(exitReason.win_rate)} WR | ${formatMoney(exitReason.total_pnl)} ${emoji}`;
+  });
+
   if (!hasAnyRows(analytics)) {
     sections.push('Пока мало данных для детальной аналитики.');
     sections.push('');
@@ -65,6 +71,7 @@ function hasAnyRows(analytics) {
     analytics.macdBias,
     analytics.rsiZones,
     analytics.holdTimes,
+    analytics.exitReasons,
   ].some((rows) => rows && rows.length > 0);
 }
 
@@ -75,6 +82,10 @@ function formatLabel(value) {
 function formatRegimeName(regime) {
   const name = regime?.market_regime ?? regime?.regime;
   return name == null ? 'NULL_REGIME' : String(name);
+}
+
+function formatExitReason(value) {
+  return String(value || 'UNKNOWN');
 }
 
 function formatPercent(value) {
@@ -89,6 +100,19 @@ function formatMoney(value) {
   const number = Number(value || 0);
   const sign = number >= 0 ? '+' : '-';
   return `${sign}$${Math.abs(number).toFixed(2)}`;
+}
+
+function calculateShare(value, rows = []) {
+  const total = rows.reduce((sum, row) => sum + Number(row.trades || 0), 0);
+  if (!total) return 0;
+  return (Number(value || 0) / total) * 100;
+}
+
+function getPnlEmoji(value) {
+  const number = Number(value || 0);
+  if (number > 0) return '✅';
+  if (number < 0) return '❌';
+  return '➖';
 }
 
 module.exports = {

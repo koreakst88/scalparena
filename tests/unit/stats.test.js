@@ -124,6 +124,10 @@ const checks = [
     name: 'Exit reasons TP=3 SL=2',
     pass: stats.exit_reasons?.TP_HIT === 3 && stats.exit_reasons?.STOP_HIT === 2,
   },
+  {
+    name: 'Daily exits содержит RSI/Timeout/Manual',
+    pass: StatsCalculator.formatMessage(stats).includes('TP:3 SL:2 RSI:0 Timeout:0 Manual:0'),
+  },
   { name: 'Avg hold time > 0', pass: stats.avg_hold_time > 0 },
   { name: 'Context coverage = 5/5', pass: stats.context_coverage?.trades_with_context === 5 },
   { name: 'Setup stats рассчитаны', pass: stats.setup_stats?.length === 2 },
@@ -156,6 +160,10 @@ const mockSupabase = {
   getMacdBiasStats: async () => [],
   getRsiZoneStats: async () => [],
   getHoldTimeStats: async () => [],
+  getExitReasonStats: async () => {
+    rpcCalls.push({ method: 'getExitReasonStats' });
+    return [];
+  },
 };
 
 StatsCalculator.getDetailedAnalytics(mockSupabase, '376069219', 7)
@@ -165,6 +173,10 @@ StatsCalculator.getDetailedAnalytics(mockSupabase, '376069219', 7)
     const rpcChecks = [
       { name: 'Top pairs minTrades = 2', pass: topCall?.minTrades === 2 },
       { name: 'Worst pairs minTrades = 1', pass: worstCall?.minTrades === 1 },
+      {
+        name: 'Exit reason stats RPC вызывается',
+        pass: rpcCalls.some((call) => call.method === 'getExitReasonStats'),
+      },
     ];
 
     rpcChecks.forEach((check) => console.log(`   ${check.pass ? '✅' : '❌'} ${check.name}`));

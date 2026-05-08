@@ -20,6 +20,7 @@ class StatsCalculator {
         macdBias,
         rsiZones,
         holdTimes,
+        exitReasons,
       ] = await Promise.all([
         supabase.getTopPairs(userId, days, 2),
         supabase.getWorstPairs(userId, days, 1),
@@ -28,6 +29,7 @@ class StatsCalculator {
         supabase.getMacdBiasStats(userId, days),
         supabase.getRsiZoneStats(userId, days),
         supabase.getHoldTimeStats(userId, days),
+        supabase.getExitReasonStats(userId, days),
       ]);
 
       return {
@@ -38,6 +40,7 @@ class StatsCalculator {
         macdBias: macdBias || [],
         rsiZones: rsiZones || [],
         holdTimes: holdTimes || [],
+        exitReasons: exitReasons || [],
       };
     } catch (error) {
       console.error('❌ getDetailedAnalytics error:', error.message || error);
@@ -152,11 +155,17 @@ Profit Factor: *${stats.profit_factor}*
     message += `\nRM Violations: *${stats.rm_violations || 0}*`;
 
     if (stats.exit_reasons) {
-      const tp = stats.exit_reasons.TP_HIT || 0;
-      const sl = stats.exit_reasons.STOP_HIT || 0;
-      const timeout =
-        (stats.exit_reasons.TIMEOUT_1H || 0) + (stats.exit_reasons.TIMEOUT_HARD || 0);
-      message += `\n\n📋 *Exits:* TP:${tp} SL:${sl} Timeout:${timeout}`;
+      const tp = this._getExitReasonCount(stats.exit_reasons, ['TP_HIT']);
+      const sl = this._getExitReasonCount(stats.exit_reasons, ['STOP_HIT']);
+      const rsi = this._getExitReasonCount(stats.exit_reasons, ['RSI_EXIT']);
+      const timeout = this._getExitReasonCount(stats.exit_reasons, [
+        'TIMEOUT_1H',
+        'TIMEOUT_60',
+        'TIMEOUT_90',
+        'TIMEOUT_HARD',
+      ]);
+      const manual = this._getExitReasonCount(stats.exit_reasons, ['MANUAL']);
+      message += `\n\n📋 *Exits:* TP:${tp} SL:${sl} RSI:${rsi} Timeout:${timeout} Manual:${manual}`;
     }
 
     if (stats.context_coverage?.trades_with_context > 0) {
@@ -345,7 +354,12 @@ Context: *${coverage.trades_with_context}/${coverage.total_trades}*
       macdBias: [],
       rsiZones: [],
       holdTimes: [],
+      exitReasons: [],
     };
+  }
+
+  static _getExitReasonCount(exitReasons, keys) {
+    return keys.reduce((sum, key) => sum + (Number(exitReasons[key]) || 0), 0);
   }
 }
 

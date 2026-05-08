@@ -29,6 +29,24 @@ const analytics = {
   holdTimes: [
     { hold_time_bucket: '15_30M', win_rate: 50, trades: 2, total_pnl: -0.1, avg_hold_minutes: 22.5 },
   ],
+  exitReasons: [
+    {
+      exit_reason: 'TIMEOUT_HARD',
+      trades: 22,
+      win_rate: 31.8,
+      avg_win: 0.2,
+      avg_loss: -0.4,
+      total_pnl: -4.15,
+    },
+    {
+      exit_reason: 'MANUAL',
+      trades: 16,
+      win_rate: 93.8,
+      avg_win: 0.35,
+      avg_loss: -0.1,
+      total_pnl: 4.01,
+    },
+  ],
 };
 
 const message = formatDetailedAnalytics(analytics, 7);
@@ -45,6 +63,8 @@ const checks = [
   { name: 'NULL_REGIME не превращается в UNKNOWN', pass: message.includes('NULL_REGIME') && !message.includes('UNKNOWN') },
   { name: 'Strategy label форматируется', pass: message.includes('MEAN REVERSION') },
   { name: 'Hold time bucket есть', pass: message.includes('15 30M') },
+  { name: 'Exit reasons section есть', pass: message.includes('EXIT REASONS') },
+  { name: 'Exit reason share считается', pass: message.includes('TIMEOUT_HARD: 57.9%') },
   { name: 'GPT sanitizer убирает markdown', pass: sanitized === 'badmarkdown x code' },
 ];
 

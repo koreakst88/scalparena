@@ -144,6 +144,14 @@ ${JSON.stringify(tradeSummary, null, 2)}
         pnl: holdTime.total_pnl,
         avgHoldMinutes: holdTime.avg_hold_minutes,
       })),
+      exitReasons: this._compactRows(analytics.exitReasons, (exitReason) => ({
+        exitReason: exitReason.exit_reason,
+        winRate: exitReason.win_rate,
+        trades: exitReason.trades,
+        avgWin: exitReason.avg_win,
+        avgLoss: exitReason.avg_loss,
+        pnl: exitReason.total_pnl,
+      })),
     };
 
     const prompt = `
@@ -250,6 +258,7 @@ ${JSON.stringify(context, null, 2)}
       analytics?.macdBias,
       analytics?.rsiZones,
       analytics?.holdTimes,
+      analytics?.exitReasons,
     ].some((rows) => rows && rows.length > 0);
   }
 }
