@@ -1,6 +1,16 @@
 -- Use Asia/Seoul calendar dates for analytics windows.
 -- UTC timestamps around local midnight should belong to the user's Seoul trading day.
 
+-- Recreate functions because Postgres cannot change RETURNS TABLE OUT parameters with CREATE OR REPLACE.
+drop function if exists get_top_pairs(text, integer, integer);
+drop function if exists get_worst_pairs(text, integer, integer);
+drop function if exists get_strategy_stats(text, integer);
+drop function if exists get_regime_stats(text, integer);
+drop function if exists get_macd_bias_stats(text, integer);
+drop function if exists get_rsi_zone_stats(text, integer);
+drop function if exists get_hold_time_stats(text, integer);
+drop function if exists get_exit_reason_stats(text, integer);
+
 create or replace function get_top_pairs(
   p_user_id text,
   p_days integer default 7,
