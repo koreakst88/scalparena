@@ -472,8 +472,8 @@ Exit:  \`$${exitPrice}\`
     const user = await this.db.getUser(userId);
     if (!user) return this._send(userId, '❌ Сначала /start');
 
-    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const trades = await this.db.getTradesSince(userId, since24h);
+    const seoulDay = StatsCalculator.getSeoulDayRange();
+    const trades = await this.db.getTradesSince(userId, seoulDay.start);
     const stats = StatsCalculator.calculate(trades, user.balance_at_8am || user.account_balance);
 
     // Сообщение 1: Статистика

@@ -3,6 +3,8 @@
 const RiskManager = require('../engine/riskManager');
 
 class StatsCalculator {
+  static SEOUL_TIMEZONE = 'Asia/Seoul';
+
   /**
    * Получить детальную аналитику через Supabase RPC.
    * @param {Object} supabase - SupabaseClient wrapper
@@ -360,6 +362,26 @@ Context: *${coverage.trades_with_context}/${coverage.total_trades}*
 
   static _getExitReasonCount(exitReasons, keys) {
     return keys.reduce((sum, key) => sum + (Number(exitReasons[key]) || 0), 0);
+  }
+
+  static getSeoulDayRange(now = new Date()) {
+    const seoulOffsetMs = 9 * 60 * 60 * 1000;
+    const seoulNow = new Date(now.getTime() + seoulOffsetMs);
+    const startUtcMs = Date.UTC(
+      seoulNow.getUTCFullYear(),
+      seoulNow.getUTCMonth(),
+      seoulNow.getUTCDate(),
+      0,
+      0,
+      0,
+      0
+    ) - seoulOffsetMs;
+
+    return {
+      start: new Date(startUtcMs),
+      end: new Date(startUtcMs + 24 * 60 * 60 * 1000),
+      timezone: this.SEOUL_TIMEZONE,
+    };
   }
 }
 

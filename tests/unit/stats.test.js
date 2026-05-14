@@ -115,6 +115,7 @@ console.log('🧪 Pattern message:');
 console.log(StatsCalculator.formatPatternMessage(stats, 7));
 
 console.log('\n🎯 Checks:');
+const seoulMidnightRange = StatsCalculator.getSeoulDayRange(new Date('2026-05-14T15:30:00.000Z'));
 const checks = [
   { name: 'OPEN сделки не считаются', pass: stats.total_trades === 5 },
   { name: 'Win rate корректный (60%)', pass: stats.win_rate === 60 },
@@ -136,6 +137,11 @@ const checks = [
   {
     name: 'Pattern message содержит TOP сетапы',
     pass: StatsCalculator.formatPatternMessage(stats, 7).includes('ТОП СЕТАПЫ'),
+  },
+  {
+    name: 'Seoul day start корректен около полуночи',
+    pass: seoulMidnightRange.start.toISOString() === '2026-05-14T15:00:00.000Z' &&
+      seoulMidnightRange.end.toISOString() === '2026-05-15T15:00:00.000Z',
   },
 ];
 
