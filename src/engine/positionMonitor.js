@@ -6,6 +6,8 @@ const FeeCalculator = require('./feeCalculator');
 const { TIMEOUT_SOFT, TIMEOUT_HARD } = require('../config/riskManagement');
 
 const CHECK_INTERVAL_MS = 60 * 1000;
+const RSI_EXIT_MIN_MOVE_PERCENT = 0.12;
+const RSI_EXIT_MIN_GROSS_PNL = 0.12;
 
 class PositionMonitor {
   constructor(bot, db, provider) {
@@ -169,6 +171,16 @@ Current: \`$${current}\`
     if (!shouldExit) return false;
 
     const finalPnl = pnlResult || this._calculatePositionPnl(position, current);
+    const rsiProfitCheck = this._getRsiExitProfitCheck(position, current, direction, finalPnl);
+    if (!rsiProfitCheck.allowed) {
+      console.log(
+        `⏸️ RSI exit blocked ${position.pair} ${direction}: ` +
+        `move=${rsiProfitCheck.movePercent}% gross=$${finalPnl.grossPnl} ` +
+        `(need ${RSI_EXIT_MIN_MOVE_PERCENT}% and $${RSI_EXIT_MIN_GROSS_PNL})`
+      );
+      return false;
+    }
+
     await this._closeTrade(position, current, 'RSI_EXIT', finalPnl);
     this._markAlerted(position.id, 'RSI');
 
@@ -294,6 +306,21 @@ ${cooloff.losses} убытка подряд — дисциплина!
       leverage: Number(position.leverage),
       direction: position.trade_type || 'SHORT',
     });
+  }
+
+  _getRsiExitProfitCheck(position, current, direction, pnlResult) {
+    const entryPrice = Number(position.entry_price);
+    const currentPrice = Number(current);
+    const movePercent = direction === 'SHORT'
+      ? ((entryPrice - currentPrice) / entryPrice) * 100
+      : ((currentPrice - entryPrice) / entryPrice) * 100;
+
+    return {
+      movePercent: Number(movePercent.toFixed(4)),
+      allowed:
+        movePercent >= RSI_EXIT_MIN_MOVE_PERCENT &&
+        pnlResult.grossPnl >= RSI_EXIT_MIN_GROSS_PNL,
+    };
   }
 
   async _closeTrade(position, exitPrice, exitReason, pnlResult = null) {

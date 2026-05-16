@@ -135,6 +135,14 @@ async function runDirectionChecks() {
     0.5
   );
 
+  const tinyRsiMonitor = createRsiMonitor(Array.from({ length: 20 }, (_, index) => 100 + index));
+  await tinyRsiMonitor._checkRSIExit(
+    { ...basePosition, id: 'tiny-rsi', trade_type: 'LONG' },
+    'SOLUSDT',
+    100.04,
+    0.01
+  );
+
   return [
     { name: 'SHORT TP срабатывает ниже take_profit', pass: directionMonitor._alreadyAlerted('short-tp', 'TP') },
     { name: 'SHORT SL срабатывает выше stop_loss', pass: directionMonitor._alreadyAlerted('short-sl', 'SL') },
@@ -159,6 +167,10 @@ async function runDirectionChecks() {
         rsiCloseUpdates.every((entry) => entry.payload.exit_reason === 'RSI_EXIT'),
     },
     { name: 'RSI exit обновляет баланс', pass: rsiBalanceUpdates.length === 2 },
+    {
+      name: 'RSI exit блокируется если gross P&L меньше комиссии/порога',
+      pass: !tinyRsiMonitor._alreadyAlerted('tiny-rsi', 'RSI') && rsiCloseUpdates.length === 2,
+    },
     { name: 'Отправлено 7 alert-сообщений', pass: alerts.length === 7 },
   ];
 }
