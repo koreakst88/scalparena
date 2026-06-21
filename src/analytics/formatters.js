@@ -2,8 +2,11 @@
 
 function formatDetailedAnalytics(analytics, days = 7) {
   const sections = [];
+  const periodLabel = days === 'all' || Number(days) >= 9999
+    ? 'ВСЁ ВРЕМЯ'
+    : `${Number(days || 7)} ДНЕЙ`;
 
-  sections.push(`📊 ДЕТАЛЬНАЯ АНАЛИТИКА ЗА ${days} ДНЕЙ`);
+  sections.push(`📊 ДЕТАЛЬНАЯ АНАЛИТИКА ЗА ${periodLabel}`);
   sections.push('════════════════════════════════');
   sections.push('');
 

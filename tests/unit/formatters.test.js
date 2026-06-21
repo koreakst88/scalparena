@@ -50,6 +50,7 @@ const analytics = {
 };
 
 const message = formatDetailedAnalytics(analytics, 7);
+const allTimeMessage = formatDetailedAnalytics(analytics, 'all');
 const analyzer = new GptAnalyzer();
 const sanitized = analyzer._sanitizeTelegramText('**bad_markdown** [x] `code`');
 console.log(message);
@@ -57,6 +58,7 @@ console.log(message);
 console.log('\n🎯 Checks:');
 const checks = [
   { name: 'Header есть', pass: message.includes('ДЕТАЛЬНАЯ АНАЛИТИКА ЗА 7 ДНЕЙ') },
+  { name: 'All-time header есть', pass: allTimeMessage.includes('ДЕТАЛЬНАЯ АНАЛИТИКА ЗА ВСЁ ВРЕМЯ') },
   { name: 'Top pair есть', pass: message.includes('SOLUSDT') },
   { name: 'Regime из поля regime выводится как есть', pass: message.includes('LOW_VOL_RANGE') },
   { name: 'Regime из поля market_regime выводится как есть', pass: message.includes('TREND_DOWN') },

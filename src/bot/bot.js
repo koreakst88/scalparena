@@ -472,15 +472,16 @@ Exit:  \`$${exitPrice}\`
     const user = await this.db.getUser(userId);
     if (!user) return this._send(userId, '❌ Сначала /start');
 
-    const seoulDay = StatsCalculator.getSeoulDayRange();
-    const trades = await this.db.getTradesSince(userId, seoulDay.start);
+    const parts = this._getCommandParts(msg.text);
+    const period = this._parseStatsPeriod(parts[1]);
+    const trades = await this.db.getTradesSince(userId, period.since);
     const stats = StatsCalculator.calculate(trades, user.balance_at_8am || user.account_balance);
 
     // Сообщение 1: Статистика
-    await this._send(userId, StatsCalculator.formatMessage(stats));
+    await this._send(userId, `${period.title}\n\n${StatsCalculator.formatMessage(stats)}`);
 
     if (trades.filter((trade) => trade.status === 'CLOSED').length === 0) {
-      return this._send(userId, '📭 Закрытых сделок сегодня нет — GPT анализ пропущен.');
+      return this._send(userId, '📭 Закрытых сделок за период нет — GPT анализ пропущен.');
     }
 
     // Сообщение 2: GPT insights (через 2 сек)
@@ -508,14 +509,16 @@ ${insights}
     const user = await this.db.getUser(userId);
     if (!user) return this._send(userId, '❌ Сначала /start');
 
-    const days = 7;
-    const isFull = msg.text?.split(/\s+/)[1] === 'full';
+    const parts = this._getCommandParts(msg.text);
+    const isFull = parts[1] === 'full';
+    const period = this._parseDaysPeriod(parts[2], 7);
+    const days = period.days;
 
     if (isFull) {
       await this._sendPlain(userId, '🔄 Собираю детальную аналитику...');
 
       const analytics = await StatsCalculator.getDetailedAnalytics(this.db, userId, days);
-      const message = formatDetailedAnalytics(analytics, days);
+      const message = formatDetailedAnalytics(analytics, period.isAll ? 'all' : days);
 
       await this._sendPlainChunks(userId, message);
 
@@ -545,6 +548,45 @@ ${insights}`
       userId,
       `${StatsCalculator.formatPatternMessage(stats, days)}\n\n💡 Детали: /patterns full`
     );
+  }
+
+  _getCommandParts(text = '') {
+    return String(text).trim().split(/\s+/).filter(Boolean);
+  }
+
+  _parseDaysPeriod(value, defaultDays = 7) {
+    if (value === 'all') {
+      return { days: 9999, isAll: true };
+    }
+
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return { days: parsed, isAll: false };
+    }
+
+    return { days: defaultDays, isAll: false };
+  }
+
+  _parseStatsPeriod(value) {
+    if (value === 'all') {
+      return {
+        since: new Date(0),
+        title: '📊 *Период:* всё время',
+      };
+    }
+
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return {
+        since: new Date(Date.now() - parsed * 24 * 60 * 60 * 1000),
+        title: `📊 *Период:* последние ${parsed} дн.`,
+      };
+    }
+
+    return {
+      since: StatsCalculator.getSeoulDayRange().start,
+      title: '📊 *Период:* сегодня (Seoul)',
+    };
   }
 
   async _onDeposit(msg, match) {
@@ -583,7 +625,9 @@ ${insights}`
 /status — открытые позиции
 /exit 91.57 — закрыть позицию
 /stats — статистика дня
+/stats 7 / 30 / all — статистика за период
 /patterns — паттерны за 7 дней
+/patterns full 14 / 30 / all — детальная аналитика
 /deposit 300 — пополнить баланс
 /help — эта справка
 
