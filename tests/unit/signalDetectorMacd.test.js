@@ -62,6 +62,18 @@ const weakLongBlocked = SignalDetector._getMeanReversionDirection(25, 10, 1, 151
 const strongShortAllowed = SignalDetector._getMeanReversionDirection(73, 90, 1, 151);
 const weakShortBlocked = SignalDetector._getMeanReversionDirection(72, 90, 1, 151);
 const weakVolumeBlocked = SignalDetector._getMeanReversionDirection(20, 5, 1, 149);
+const shortMrContextAllowed = SignalDetector._isMeanReversionContextAllowed(
+  'SHORT',
+  lowVol('BEARISH')
+);
+const bullishMrContextBlocked = SignalDetector._isMeanReversionContextAllowed(
+  'SHORT',
+  lowVol('BULLISH')
+);
+const longMrContextBlocked = SignalDetector._isMeanReversionContextAllowed(
+  'LONG',
+  lowVol('BULLISH')
+);
 
 console.log(`   SHORT aligned: ${shortAligned}`);
 console.log(`   SHORT mixed:   ${shortMixed}`);
@@ -100,8 +112,8 @@ const checks = [
       !SignalDetector._isMacdAlignedWithDirection('LONG', 'BEARISH'),
   },
   {
-    name: 'MR LONG разрешён только при RSI <25',
-    pass: strongLongAllowed === 'LONG' && weakLongBlocked === null,
+    name: 'MR LONG отключён даже при RSI <25',
+    pass: strongLongAllowed === null && weakLongBlocked === null,
   },
   {
     name: 'MR SHORT разрешён только при RSI >72',
@@ -110,6 +122,10 @@ const checks = [
   {
     name: 'MR блокирует volume ниже 150%',
     pass: weakVolumeBlocked === null,
+  },
+  {
+    name: 'MR разрешает только SHORT LOW_VOL_RANGE BEARISH',
+    pass: shortMrContextAllowed && !bullishMrContextBlocked && !longMrContextBlocked,
   },
 ];
 

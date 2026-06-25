@@ -129,6 +129,7 @@ class SignalDetector {
     );
 
     if (!direction) return null;
+    if (!this._isMeanReversionContextAllowed(direction, context)) return null;
 
     const stopLoss = direction === 'LONG'
       ? parseFloat((context.currentPrice * (1 - MR_SL_PERCENT)).toFixed(8))
@@ -235,10 +236,17 @@ class SignalDetector {
     if (volume < MIN_MR_VOLUME) return null;
     if (bbWidth < MIN_BB_WIDTH) return null;
 
-    if (rsi < MR_LONG_RSI_MAX && bbPosition <= 20) return 'LONG';
     if (rsi > MR_SHORT_RSI_MIN && bbPosition >= 80) return 'SHORT';
 
     return null;
+  }
+
+  static _isMeanReversionContextAllowed(direction, context) {
+    return (
+      direction === 'SHORT' &&
+      context.market.regime === 'LOW_VOL_RANGE' &&
+      context.macdBias === 'BEARISH'
+    );
   }
 
   static _isMomentumEntryValid(direction, context) {
