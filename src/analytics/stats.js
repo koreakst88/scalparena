@@ -12,7 +12,7 @@ class StatsCalculator {
    * @param {number} days - Days to look back
    * @returns {Object} Detailed analytics data
    */
-  static async getDetailedAnalytics(supabase, userId, days = 7) {
+  static async getDetailedAnalytics(supabase, userId, days = 7, options = {}) {
     try {
       const [
         topPairs,
@@ -24,14 +24,14 @@ class StatsCalculator {
         holdTimes,
         exitReasons,
       ] = await Promise.all([
-        supabase.getTopPairs(userId, days, 2),
-        supabase.getWorstPairs(userId, days, 1),
-        supabase.getRegimeStats(userId, days),
-        supabase.getStrategyStats(userId, days),
-        supabase.getMacdBiasStats(userId, days),
-        supabase.getRsiZoneStats(userId, days),
-        supabase.getHoldTimeStats(userId, days),
-        supabase.getExitReasonStats(userId, days),
+        supabase.getTopPairs(userId, days, 2, options.strategyVersion),
+        supabase.getWorstPairs(userId, days, 1, options.strategyVersion),
+        supabase.getRegimeStats(userId, days, options.strategyVersion),
+        supabase.getStrategyStats(userId, days, options.strategyVersion),
+        supabase.getMacdBiasStats(userId, days, options.strategyVersion),
+        supabase.getRsiZoneStats(userId, days, options.strategyVersion),
+        supabase.getHoldTimeStats(userId, days, options.strategyVersion),
+        supabase.getExitReasonStats(userId, days, options.strategyVersion),
       ]);
 
       return {

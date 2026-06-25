@@ -13,6 +13,7 @@ const Scheduler = require('../engine/scheduler');
 const GptAnalyzer = require('../analytics/gptAnalyzer');
 const StatsCalculator = require('../analytics/stats');
 const { formatDetailedAnalytics } = require('../analytics/formatters');
+const { CURRENT_STRATEGY_VERSION, LEGACY_STRATEGY_VERSION } = require('../config/strategy');
 
 class ScalpArenaBot {
   constructor() {
@@ -473,12 +474,15 @@ Exit:  \`$${exitPrice}\`
     if (!user) return this._send(userId, '❌ Сначала /start');
 
     const parts = this._getCommandParts(msg.text);
-    const period = this._parseStatsPeriod(parts[1]);
-    const trades = await this.db.getTradesSince(userId, period.since);
+    const versionFilter = this._parseStrategyVersion(parts);
+    const period = this._parseStatsPeriod(parts.find((part) => !this._isStrategyVersionArg(part) && part !== '/stats'));
+    const trades = await this.db.getTradesSince(userId, period.since, {
+      strategyVersion: versionFilter,
+    });
     const stats = StatsCalculator.calculate(trades, user.balance_at_8am || user.account_balance);
 
     // Сообщение 1: Статистика
-    await this._send(userId, `${period.title}\n\n${StatsCalculator.formatMessage(stats)}`);
+    await this._send(userId, `${period.title}${this._formatVersionTitle(versionFilter)}\n\n${StatsCalculator.formatMessage(stats)}`);
 
     if (trades.filter((trade) => trade.status === 'CLOSED').length === 0) {
       return this._send(userId, '📭 Закрытых сделок за период нет — GPT анализ пропущен.');
@@ -511,16 +515,22 @@ ${insights}
 
     const parts = this._getCommandParts(msg.text);
     const isFull = parts[1] === 'full';
-    const period = this._parseDaysPeriod(parts[2], 7);
+    const versionFilter = this._parseStrategyVersion(parts);
+    const daysArg = parts.find((part, index) => {
+      return index > 1 && !this._isStrategyVersionArg(part);
+    });
+    const period = this._parseDaysPeriod(daysArg, 7);
     const days = period.days;
 
     if (isFull) {
       await this._sendPlain(userId, '🔄 Собираю детальную аналитику...');
 
-      const analytics = await StatsCalculator.getDetailedAnalytics(this.db, userId, days);
+      const analytics = await StatsCalculator.getDetailedAnalytics(this.db, userId, days, {
+        strategyVersion: versionFilter,
+      });
       const message = formatDetailedAnalytics(analytics, period.isAll ? 'all' : days);
 
-      await this._sendPlainChunks(userId, message);
+      await this._sendPlainChunks(userId, `${message}${this._formatPlainVersionTitle(versionFilter)}`);
 
       try {
         await this._sendPlain(userId, '🤖 GPT анализирует паттерны...');
@@ -541,7 +551,9 @@ ${insights}`
     }
 
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-    const trades = await this.db.getTradesSince(userId, since);
+    const trades = await this.db.getTradesSince(userId, since, {
+      strategyVersion: versionFilter,
+    });
     const stats = StatsCalculator.calculate(trades, user.balance_at_8am || user.account_balance);
 
     await this._send(
@@ -589,6 +601,26 @@ ${insights}`
     };
   }
 
+  _parseStrategyVersion(parts = []) {
+    const versionArg = parts.find((part) => this._isStrategyVersionArg(part));
+    if (!versionArg) return null;
+    if (versionArg === 'v1') return LEGACY_STRATEGY_VERSION;
+    if (versionArg === 'v2') return CURRENT_STRATEGY_VERSION;
+    return versionArg;
+  }
+
+  _isStrategyVersionArg(value) {
+    return value === 'v1' || value === 'v2' || /^v\d+_[a-z0-9_]+$/i.test(String(value || ''));
+  }
+
+  _formatVersionTitle(strategyVersion) {
+    return strategyVersion ? `\n🧬 *Версия:* ${strategyVersion}` : '';
+  }
+
+  _formatPlainVersionTitle(strategyVersion) {
+    return strategyVersion ? `\n\n🧬 Версия стратегии: ${strategyVersion}` : '';
+  }
+
   async _onDeposit(msg, match) {
     const userId = String(msg.chat.id);
     const amount = parseFloat(match[1]);
@@ -626,8 +658,10 @@ ${insights}`
 /exit 91.57 — закрыть позицию
 /stats — статистика дня
 /stats 7 / 30 / all — статистика за период
+/stats v2 / 30 v2 — только новая версия
 /patterns — паттерны за 7 дней
 /patterns full 14 / 30 / all — детальная аналитика
+/patterns full 30 v2 — новая версия отдельно
 /deposit 300 — пополнить баланс
 /help — эта справка
 
@@ -951,6 +985,7 @@ Exit:  \`$${price}\`
     if (!signal) return {};
 
     return {
+      strategy_version: CURRENT_STRATEGY_VERSION,
       strategy: signal.strategy,
       entry_mode: signal.entryMode,
       market_regime: signal.marketRegime,

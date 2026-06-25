@@ -153,26 +153,43 @@ console.log('\n6️⃣  Detailed Analytics RPC Params\n');
 
 const rpcCalls = [];
 const mockSupabase = {
-  getTopPairs: async (userId, days, minTrades) => {
-    rpcCalls.push({ method: 'getTopPairs', userId, days, minTrades });
+  getTopPairs: async (userId, days, minTrades, strategyVersion) => {
+    rpcCalls.push({ method: 'getTopPairs', userId, days, minTrades, strategyVersion });
     return [];
   },
-  getWorstPairs: async (userId, days, minTrades) => {
-    rpcCalls.push({ method: 'getWorstPairs', userId, days, minTrades });
+  getWorstPairs: async (userId, days, minTrades, strategyVersion) => {
+    rpcCalls.push({ method: 'getWorstPairs', userId, days, minTrades, strategyVersion });
     return [];
   },
-  getRegimeStats: async () => [],
-  getStrategyStats: async () => [],
-  getMacdBiasStats: async () => [],
-  getRsiZoneStats: async () => [],
-  getHoldTimeStats: async () => [],
-  getExitReasonStats: async () => {
-    rpcCalls.push({ method: 'getExitReasonStats' });
+  getRegimeStats: async (_userId, _days, strategyVersion) => {
+    rpcCalls.push({ method: 'getRegimeStats', strategyVersion });
+    return [];
+  },
+  getStrategyStats: async (_userId, _days, strategyVersion) => {
+    rpcCalls.push({ method: 'getStrategyStats', strategyVersion });
+    return [];
+  },
+  getMacdBiasStats: async (_userId, _days, strategyVersion) => {
+    rpcCalls.push({ method: 'getMacdBiasStats', strategyVersion });
+    return [];
+  },
+  getRsiZoneStats: async (_userId, _days, strategyVersion) => {
+    rpcCalls.push({ method: 'getRsiZoneStats', strategyVersion });
+    return [];
+  },
+  getHoldTimeStats: async (_userId, _days, strategyVersion) => {
+    rpcCalls.push({ method: 'getHoldTimeStats', strategyVersion });
+    return [];
+  },
+  getExitReasonStats: async (_userId, _days, strategyVersion) => {
+    rpcCalls.push({ method: 'getExitReasonStats', strategyVersion });
     return [];
   },
 };
 
-StatsCalculator.getDetailedAnalytics(mockSupabase, '376069219', 7)
+StatsCalculator.getDetailedAnalytics(mockSupabase, '376069219', 7, {
+  strategyVersion: 'v2_restricted_mr_pullback',
+})
   .then(() => {
     const topCall = rpcCalls.find((call) => call.method === 'getTopPairs');
     const worstCall = rpcCalls.find((call) => call.method === 'getWorstPairs');
@@ -182,6 +199,10 @@ StatsCalculator.getDetailedAnalytics(mockSupabase, '376069219', 7)
       {
         name: 'Exit reason stats RPC вызывается',
         pass: rpcCalls.some((call) => call.method === 'getExitReasonStats'),
+      },
+      {
+        name: 'Strategy version передаётся во все RPC',
+        pass: rpcCalls.every((call) => call.strategyVersion === 'v2_restricted_mr_pullback'),
       },
     ];
 

@@ -4,6 +4,7 @@ const { createClient } = require('@supabase/supabase-js');
 const RiskManager = require('../engine/riskManager');
 
 const TRADE_CONTEXT_FIELDS = [
+  'strategy_version',
   'strategy',
   'entry_mode',
   'market_regime',
@@ -48,7 +49,7 @@ class SupabaseClient {
     if (this._isMissingTradeContextColumnError(error)) {
       console.warn('⚠️ Trade context columns missing in Supabase, retrying without context fields');
       const fallbackPayload = { ...payload };
-      TRADE_CONTEXT_FIELDS.forEach((field) => delete fallbackPayload[field]);
+      this._getMissingTradeContextFields(error).forEach((field) => delete fallbackPayload[field]);
 
       const { data: fallbackData, error: fallbackError } = await this.client
         .from('trades')
@@ -173,15 +174,17 @@ class SupabaseClient {
     return data || [];
   }
 
-  async getTradesSince(userId, since) {
+  async getTradesSince(userId, since, options = {}) {
     const sinceIso = since instanceof Date ? since.toISOString() : since;
-
-    const { data, error } = await this.client
+    let query = this.client
       .from('trades')
       .select('*')
       .eq('user_id', String(userId))
-      .gte('entry_time', sinceIso)
-      .order('entry_time', { ascending: false });
+      .gte('entry_time', sinceIso);
+
+    query = this._applyStrategyVersionFilter(query, options.strategyVersion);
+
+    const { data, error } = await query.order('entry_time', { ascending: false });
 
     if (error) {
       console.error('❌ getTradesSince error:', error.message);
@@ -214,40 +217,45 @@ class SupabaseClient {
   // DETAILED ANALYTICS METHODS
   // ============================================
 
-  async getTopPairs(userId, days = 7, minTrades = 3) {
+  async getTopPairs(userId, days = 7, minTrades = 3, strategyVersion = null) {
     return this._callAnalyticsRpc('get_top_pairs', {
       p_user_id: String(userId),
       p_days: days,
       p_min_trades: minTrades,
+      p_strategy_version: strategyVersion,
     });
   }
 
-  async getWorstPairs(userId, days = 7, minTrades = 3) {
+  async getWorstPairs(userId, days = 7, minTrades = 3, strategyVersion = null) {
     return this._callAnalyticsRpc('get_worst_pairs', {
       p_user_id: String(userId),
       p_days: days,
       p_min_trades: minTrades,
+      p_strategy_version: strategyVersion,
     });
   }
 
-  async getRegimeStats(userId, days = 7) {
+  async getRegimeStats(userId, days = 7, strategyVersion = null) {
     return this._callAnalyticsRpc('get_regime_stats', {
       p_user_id: String(userId),
       p_days: days,
+      p_strategy_version: strategyVersion,
     });
   }
 
-  async getStrategyStats(userId, days = 7) {
+  async getStrategyStats(userId, days = 7, strategyVersion = null) {
     return this._callAnalyticsRpc('get_strategy_stats', {
       p_user_id: String(userId),
       p_days: days,
+      p_strategy_version: strategyVersion,
     });
   }
 
-  async getMacdBiasStats(userId, days = 7) {
+  async getMacdBiasStats(userId, days = 7, strategyVersion = null) {
     return this._callAnalyticsRpc('get_macd_bias_stats', {
       p_user_id: String(userId),
       p_days: days,
+      p_strategy_version: strategyVersion,
     });
   }
 
@@ -255,10 +263,11 @@ class SupabaseClient {
     return this.getMacdBiasStats(userId, days);
   }
 
-  async getRsiZoneStats(userId, days = 7) {
+  async getRsiZoneStats(userId, days = 7, strategyVersion = null) {
     return this._callAnalyticsRpc('get_rsi_zone_stats', {
       p_user_id: String(userId),
       p_days: days,
+      p_strategy_version: strategyVersion,
     });
   }
 
@@ -266,17 +275,19 @@ class SupabaseClient {
     return this.getRsiZoneStats(userId, days);
   }
 
-  async getHoldTimeStats(userId, days = 7) {
+  async getHoldTimeStats(userId, days = 7, strategyVersion = null) {
     return this._callAnalyticsRpc('get_hold_time_stats', {
       p_user_id: String(userId),
       p_days: days,
+      p_strategy_version: strategyVersion,
     });
   }
 
-  async getExitReasonStats(userId, days = 7) {
+  async getExitReasonStats(userId, days = 7, strategyVersion = null) {
     return this._callAnalyticsRpc('get_exit_reason_stats', {
       p_user_id: String(userId),
       p_days: days,
+      p_strategy_version: strategyVersion,
     });
   }
 
@@ -382,8 +393,19 @@ class SupabaseClient {
     );
   }
 
+  _getMissingTradeContextFields(error) {
+    const message = error?.message || '';
+    const missing = TRADE_CONTEXT_FIELDS.filter((field) => message.includes(field));
+    return missing.length > 0 ? missing : TRADE_CONTEXT_FIELDS;
+  }
+
   async _callAnalyticsRpc(name, params) {
-    const { data, error } = await this.client.rpc(name, params);
+    const rpcParams = { ...params };
+    if (rpcParams.p_strategy_version == null) {
+      delete rpcParams.p_strategy_version;
+    }
+
+    const { data, error } = await this.client.rpc(name, rpcParams);
 
     if (error) {
       console.error(`❌ ${name} RPC error:`, error.message || error);
@@ -396,6 +418,11 @@ class SupabaseClient {
   _isMissingFeeColumnError(error) {
     const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`;
     return ['gross_pnl', 'entry_fee', 'exit_fee'].some((field) => message.includes(field));
+  }
+
+  _applyStrategyVersionFilter(query, strategyVersion) {
+    if (!strategyVersion) return query;
+    return query.eq('strategy_version', strategyVersion);
   }
 }
 
