@@ -19,6 +19,12 @@ const MR_SHORT_RSI_MIN = 72;
 
 const MR_TP_PERCENT = 0.008;
 const MR_SL_PERCENT = 0.008;
+const PULLBACK_TP_PERCENT = 0.01;
+const PULLBACK_SL_PERCENT = 0.007;
+const PULLBACK_MIN_VOLUME = 120;
+const PULLBACK_MIN_RSI = 40;
+const PULLBACK_MAX_RSI = 60;
+const PULLBACK_MAX_EMA_DISTANCE = 0.8;
 const MOMENTUM_TP_PERCENT = 0.012;
 const MOMENTUM_SL_PERCENT = 0.008;
 const LOW_VOL_MACD_ALIGNED_BONUS = 10;
@@ -34,7 +40,7 @@ class SignalDetector {
     if (context.market.strategy === 'SKIP') return null;
 
     if (context.market.strategy === 'MOMENTUM') {
-      return this._detectMomentum(pair, context);
+      return this._detectTrendPullback(pair, context);
     }
 
     return this._detectMeanReversion(pair, context);
@@ -187,6 +193,33 @@ class SignalDetector {
     });
   }
 
+  static _detectTrendPullback(pair, context) {
+    const direction = context.market.regime === 'TREND_UP' ? 'LONG' : 'SHORT';
+    const valid = this._isTrendPullbackEntryValid(direction, context);
+
+    if (!valid) return null;
+
+    const stopLoss = direction === 'LONG'
+      ? parseFloat((context.currentPrice * (1 - PULLBACK_SL_PERCENT)).toFixed(8))
+      : parseFloat((context.currentPrice * (1 + PULLBACK_SL_PERCENT)).toFixed(8));
+    const takeProfit = direction === 'LONG'
+      ? parseFloat((context.currentPrice * (1 + PULLBACK_TP_PERCENT)).toFixed(8))
+      : parseFloat((context.currentPrice * (1 - PULLBACK_TP_PERCENT)).toFixed(8));
+
+    return this._buildSignal(pair, context, {
+      direction,
+      strategy: 'TREND_PULLBACK',
+      entryMode: 'EMA20_PULLBACK',
+      stopLoss,
+      takeProfit,
+      tpPercent: PULLBACK_TP_PERCENT,
+      slPercent: PULLBACK_SL_PERCENT,
+      confidence: this._calculateTrendPullbackConfidence(direction, context),
+      setupReason: this._buildTrendPullbackReason(direction, context),
+      invalidationRule: this._buildInvalidationRule(direction, stopLoss),
+    });
+  }
+
   static _buildSignal(pair, context, config) {
     const slDist = Math.abs(context.currentPrice - config.stopLoss);
     const tpDist = Math.abs(context.currentPrice - config.takeProfit);
@@ -265,6 +298,23 @@ class SignalDetector {
     return context.market.roc12 < -1.2 || context.candleImpulse < -0.25;
   }
 
+  static _isTrendPullbackEntryValid(direction, context) {
+    if (context.volume < PULLBACK_MIN_VOLUME) return false;
+    if (context.rsi < PULLBACK_MIN_RSI || context.rsi > PULLBACK_MAX_RSI) return false;
+    if (!this._isMacdAlignedWithDirection(direction, context.macdBias)) return false;
+
+    const emaDistance = this._getEmaDistancePercent(context);
+    if (emaDistance > PULLBACK_MAX_EMA_DISTANCE) return false;
+
+    if (direction === 'LONG') {
+      if (context.currentPrice < context.market.ema20) return false;
+      return context.market.emaSpread > 0 && context.market.roc12 > 0;
+    }
+
+    if (context.currentPrice > context.market.ema20) return false;
+    return context.market.emaSpread < 0 && context.market.roc12 < 0;
+  }
+
   static _isExtreme(rsi) {
     return rsi < MR_LONG_RSI_MAX || rsi > MR_SHORT_RSI_MIN;
   }
@@ -333,6 +383,26 @@ class SignalDetector {
     return Math.round(Math.min(score, 100));
   }
 
+  static _calculateTrendPullbackConfidence(direction, context) {
+    let score = 60;
+    const emaDistance = this._getEmaDistancePercent(context);
+    const proximityBonus = Math.max((PULLBACK_MAX_EMA_DISTANCE - emaDistance) / PULLBACK_MAX_EMA_DISTANCE, 0) * 12;
+    const trendBonus = Math.min(Math.abs(context.market.emaSpread) / 1.2, 1) * 10;
+    const volumeBonus = Math.max(Math.min((context.volume - PULLBACK_MIN_VOLUME) / 80, 1), 0) * 8;
+
+    score += proximityBonus + trendBonus + volumeBonus;
+
+    if (Math.abs(context.market.roc12) >= 1.5) score += 5;
+    if (this._isMacdAlignedWithDirection(direction, context.macdBias)) score += 5;
+
+    return Math.round(Math.min(score, 100));
+  }
+
+  static _getEmaDistancePercent(context) {
+    if (!context.currentPrice || !context.market?.ema20) return Infinity;
+    return Math.abs((context.currentPrice - context.market.ema20) / context.currentPrice) * 100;
+  }
+
   static _getMacdBias(macd) {
     if (!macd || macd.macd === 0 && macd.signal === 0 && macd.histogram === 0) {
       return 'FLAT';
@@ -358,6 +428,11 @@ class SignalDetector {
   static _buildMomentumReason(direction, context) {
     const trend = direction === 'LONG' ? 'восходящий тренд' : 'нисходящий тренд';
     return `${trend}: ROC12 ${context.market.roc12}%, EMA spread ${context.market.emaSpread}%, MACD ${context.macdBias}`;
+  }
+
+  static _buildTrendPullbackReason(direction, context) {
+    const trend = direction === 'LONG' ? 'восходящий тренд' : 'нисходящий тренд';
+    return `${trend}: откат к EMA20 (${this._getEmaDistancePercent(context).toFixed(2)}%), RSI ${context.rsi.toFixed(1)}, volume ${context.volume.toFixed(0)}%, MACD ${context.macdBias}`;
   }
 
   static _buildInvalidationRule(direction, stopLoss) {
