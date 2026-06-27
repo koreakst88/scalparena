@@ -6,14 +6,36 @@ const TelegramBot = require('node-telegram-bot-api');
 const { BybitDataProvider } = require('../data/bybitProvider');
 const SupabaseClient = require('../data/supabaseClient');
 const SignalDetector = require('../engine/signalDetector');
+const CandidateEngine = require('../engine/candidateEngine');
 const RiskManager = require('../engine/riskManager');
 const FeeCalculator = require('../engine/feeCalculator');
 const PositionMonitor = require('../engine/positionMonitor');
 const Scheduler = require('../engine/scheduler');
+const PaperSignalTracker = require('../engine/paperSignalTracker');
 const GptAnalyzer = require('../analytics/gptAnalyzer');
 const StatsCalculator = require('../analytics/stats');
+const PaperSignalStats = require('../analytics/paperSignalStats');
+const CandidateFormatter = require('../analytics/candidateFormatter');
 const { formatDetailedAnalytics } = require('../analytics/formatters');
 const { CURRENT_STRATEGY_VERSION, LEGACY_STRATEGY_VERSION } = require('../config/strategy');
+const {
+  PAPER_SIGNAL_TRACKING_ENABLED,
+  PAPER_SIGNAL_TTL_MINUTES,
+} = require('../config/paperSignals');
+
+const BOT_COMMANDS = [
+  { command: 'start', description: 'Запуск и профиль трейдера' },
+  { command: 'scan', description: 'Строгие Hybrid сигналы' },
+  { command: 'candidates', description: 'Топ сценариев: full/paper' },
+  { command: 'signals', description: 'Paper TP/SL статистика: 7/30/all' },
+  { command: 'patterns', description: 'Паттерны: full 14/30/all' },
+  { command: 'status', description: 'Открытые позиции' },
+  { command: 'rm', description: 'RM калькулятор: /rm 10' },
+  { command: 'exit', description: 'Закрыть позицию: /exit price' },
+  { command: 'stats', description: 'Статистика: 7/30/all/v2' },
+  { command: 'deposit', description: 'Пополнить баланс: /deposit 300' },
+  { command: 'help', description: 'Справка по командам' },
+];
 
 class ScalpArenaBot {
   constructor() {
@@ -31,6 +53,7 @@ class ScalpArenaBot {
     this.analyzer = new GptAnalyzer();
     this.monitor = null;
     this.scheduler = null;
+    this.paperSignalTracker = null;
     this.ready = false;
     this.commandsRegistered = false;
     this.pendingSignals = new Map();
@@ -43,6 +66,7 @@ class ScalpArenaBot {
     console.log('🚀 Starting ScalpArena Bot...');
 
     this._registerCommands();
+    await this._setCommandMenu();
 
     // Инициализировать минимальный provider state синхронно, но не блокировать bot startup backfill'ом.
     await this.provider.validatePairs();
@@ -57,6 +81,9 @@ class ScalpArenaBot {
 
     this.scheduler = new Scheduler(this, this.db, this.provider);
     this.scheduler.start();
+
+    this.paperSignalTracker = new PaperSignalTracker(this, this.db, this.provider);
+    this.paperSignalTracker.start();
 
     console.log('✅ Bot ready!');
     this._startBackfillInBackground();
@@ -84,6 +111,9 @@ class ScalpArenaBot {
     this.bot.onText(/\/rm (.+)/, this._safe((msg, match) => this._onRm(msg, match)));
     this.bot.onText(/\/exit (.+)/, this._safe((msg, match) => this._onExit(msg, match)));
     this.bot.onText(/\/stats/, this._safe((msg) => this._onStats(msg)));
+    this.bot.onText(/\/candidates/, this._safe((msg) => this._onCandidates(msg)));
+    this.bot.onText(/\/signals/, this._safe((msg) => this._onSignals(msg)));
+    this.bot.onText(/\/signal_stats/, this._safe((msg) => this._onSignals(msg)));
     this.bot.onText(/\/patterns/, this._safe((msg) => this._onPatterns(msg)));
     this.bot.onText(/\/deposit (.+)/, this._safe((msg, match) => this._onDeposit(msg, match)));
     this.bot.onText(/\/help/, this._safe((msg) => this._onHelp(msg)));
@@ -96,6 +126,22 @@ class ScalpArenaBot {
 
     this.commandsRegistered = true;
     console.log('✅ Commands registered');
+  }
+
+  async _setCommandMenu() {
+    try {
+      await this.bot.setMyCommands(BOT_COMMANDS);
+      await this.bot.setChatMenuButton({
+        menu_button: {
+          type: 'commands',
+        },
+      });
+
+      const menuButton = await this.bot.getChatMenuButton();
+      console.log(`✅ Telegram command menu updated (${menuButton?.type || 'unknown'})`);
+    } catch (error) {
+      console.error('❌ Telegram command menu update failed:', error?.message || error);
+    }
   }
 
   // ─────────────────────────────────────────
@@ -245,6 +291,7 @@ Cooldown по паре: *${RiskManager.getPairCooldownMinutes()} мин* пос�
     const top = tradableSignals.slice(0, Math.min(3, slotsAvailable));
     for (let i = 0; i < top.length; i++) {
       const signal = top[i];
+      const paperSignal = await this._trackPaperSignal(userId, signal, 'MANUAL_SCAN');
       const signalId = this._storePendingSignal(signal);
       const strategyLabel = this._formatSignalLabel(signal.strategy);
       const regimeLabel = this._formatSignalLabel(signal.marketRegime);
@@ -290,6 +337,7 @@ Cooldown по паре: *${RiskManager.getPairCooldownMinutes()} мин* пос�
 
 🎯 Уверенность: *${signal.confidence}%*
 ⏰ Действует: 30 мин
+${paperSignal ? '\n🧪 Paper signal записан для отслеживания' : ''}
       `,
         {
           reply_markup: {
@@ -508,6 +556,49 @@ ${insights}
     );
   }
 
+  async _onCandidates(msg) {
+    const userId = String(msg.chat.id);
+
+    if (!this.ready) {
+      return this._send(userId, '⏳ Провайдер данных загружается... Попробуй через 30 сек');
+    }
+
+    const parts = this._getCommandParts(msg.text);
+    const mode = parts[1] || 'top';
+
+    await this._sendPlain(userId, '🧠 Анализирую market candidates по 15 парам...');
+
+    const reports = CandidateEngine.scanAll(this.provider);
+    const actionable = CandidateEngine.getActionableCandidates(reports, 3);
+
+    if (mode === 'full') {
+      return this._sendPlainChunks(userId, CandidateFormatter.formatFull(reports));
+    }
+
+    if (mode === 'paper') {
+      if (!PAPER_SIGNAL_TRACKING_ENABLED) {
+        await this._sendPlain(
+          userId,
+          '🧪 Paper tracking выключен. Включи PAPER_SIGNAL_TRACKING_ENABLED=true, чтобы /candidates paper записывал кандидатов.'
+        );
+        return this._sendPlain(userId, CandidateFormatter.formatTop(reports, actionable));
+      }
+
+      const tracked = [];
+
+      for (const candidate of actionable) {
+        const paperSignal = CandidateEngine.toPaperSignal(candidate);
+        const saved = await this._trackPaperSignal(userId, paperSignal, 'CANDIDATE_ENGINE');
+        if (saved) tracked.push(candidate);
+      }
+
+      await this._sendPlain(userId, CandidateFormatter.formatPaperResult(tracked));
+      return this._sendPlain(userId, CandidateFormatter.formatTop(reports, actionable));
+    }
+
+    return this._sendPlain(userId, CandidateFormatter.formatTop(reports, actionable));
+  }
+
   async _onPatterns(msg) {
     const userId = String(msg.chat.id);
     const user = await this.db.getUser(userId);
@@ -559,6 +650,22 @@ ${insights}`
     await this._send(
       userId,
       `${StatsCalculator.formatPatternMessage(stats, days)}\n\n💡 Детали: /patterns full`
+    );
+  }
+
+  async _onSignals(msg) {
+    const userId = String(msg.chat.id);
+    const user = await this.db.getUser(userId);
+    if (!user) return this._send(userId, '❌ Сначала /start');
+
+    const parts = this._getCommandParts(msg.text);
+    const period = this._parseStatsPeriod(parts[1]);
+    const signals = await this.db.getPaperSignalsSince(userId, period.since);
+    const stats = PaperSignalStats.calculate(signals);
+
+    await this._sendPlain(
+      userId,
+      PaperSignalStats.format(stats, period.title.replace(/[*📊]/g, '').replace('Период:', '').trim())
     );
   }
 
@@ -659,6 +766,10 @@ ${insights}`
 /stats — статистика дня
 /stats 7 / 30 / all — статистика за период
 /stats v2 / 30 v2 — только новая версия
+/candidates — топ торговых сценариев сейчас
+/candidates full — диагностика по всем парам
+/candidates paper — записать топ-кандидатов в paper tracking
+/signals 7 / 30 / all — paper-сигналы и TP/SL статистика
 /patterns — паттерны за 7 дней
 /patterns full 14 / 30 / all — детальная аналитика
 /patterns full 30 v2 — новая версия отдельно
@@ -1002,6 +1113,38 @@ Exit:  \`$${price}\`
       atr_percent: signal.atrPercent,
       volume_spike_percentage: signal.volume,
     };
+  }
+
+  async _trackPaperSignal(userId, signal, source = 'MANUAL_SCAN') {
+    if (!PAPER_SIGNAL_TRACKING_ENABLED || !signal) return null;
+
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + PAPER_SIGNAL_TTL_MINUTES * 60 * 1000);
+
+    return this.db.createPaperSignal(userId, {
+      pair: signal.pair,
+      direction: signal.type,
+      strategy: signal.strategy,
+      entry_mode: signal.entryMode,
+      market_regime: signal.marketRegime,
+      strategy_version: CURRENT_STRATEGY_VERSION,
+      entry_price: signal.entryPrice,
+      stop_loss: signal.stopLoss,
+      take_profit: signal.takeProfit,
+      confidence: signal.confidence,
+      rsi: signal.rsi,
+      volume: signal.volume,
+      atr_percent: signal.atrPercent,
+      bb_position: signal.bbPosition,
+      bb_width: signal.bbWidth,
+      macd_bias: signal.macdBias,
+      signal_reason: signal.setupReason,
+      invalidation_rule: signal.invalidationRule,
+      max_favorable_price: signal.entryPrice,
+      max_adverse_price: signal.entryPrice,
+      source,
+      expires_at: expiresAt.toISOString(),
+    });
   }
 
   _calculateTradePnl(trade, exitPrice) {

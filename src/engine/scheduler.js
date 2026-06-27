@@ -2,6 +2,11 @@
 
 const SignalDetector = require('./signalDetector');
 const RiskManager = require('./riskManager');
+const {
+  PAPER_SIGNAL_TRACKING_ENABLED,
+  PAPER_SIGNAL_ALERTS_ENABLED,
+  PAPER_SIGNAL_AUTO_LOG_ENABLED,
+} = require('../config/paperSignals');
 
 const SCAN_INTERVAL_MS = 15 * 60 * 1000;
 const SEOUL_TIMEZONE = process.env.TIMEZONE || 'Asia/Seoul';
@@ -144,11 +149,21 @@ class Scheduler {
 
     await this.bot._send(
       userId,
-      `🔔 *Авто-скан: найдено ${filteredSignals.length} сигнал(ов), отправляю ${top.length} лучших*`
+      `🔔 *Авто-скан: найдено ${filteredSignals.length} сигнал(ов), отправляю ${top.length} лучших*` +
+        `${PAPER_SIGNAL_TRACKING_ENABLED ? '\n🧪 Paper tracking: ON, live trading: OFF' : ''}`
     );
 
     for (let i = 0; i < top.length; i++) {
       const signal = top[i];
+      let paperSignal = null;
+      if (PAPER_SIGNAL_AUTO_LOG_ENABLED) {
+        paperSignal = await this.bot._trackPaperSignal(userId, signal, 'AUTO_SCAN');
+      }
+
+      if (!PAPER_SIGNAL_ALERTS_ENABLED && paperSignal) {
+        continue;
+      }
+
       const signalId = this.bot._storePendingSignal(signal);
       const strategyLabel = this.bot._formatSignalLabel(signal.strategy);
       const regimeLabel = this.bot._formatSignalLabel(signal.marketRegime);
@@ -186,6 +201,7 @@ class Scheduler {
 💼 Margin: *$${position.margin}* | RR: *${position.riskReward}*
 
 🎯 Уверенность: *${signal.confidence}%*
+${paperSignal ? '\n🧪 Paper signal записан для отслеживания' : ''}
       `,
         {
           reply_markup: {

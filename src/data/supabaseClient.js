@@ -174,6 +174,73 @@ class SupabaseClient {
     return data || [];
   }
 
+  async createPaperSignal(userId, signalData) {
+    const payload = {
+      user_id: String(userId),
+      ...signalData,
+    };
+
+    const { data, error } = await this.client
+      .from('paper_signals')
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error?.code === '23505') {
+      console.log(`🧪 Paper signal duplicate skipped: ${payload.pair} ${payload.direction}`);
+      return null;
+    }
+
+    if (error) throw error;
+    return data;
+  }
+
+  async getActivePaperSignals(userId = null) {
+    let query = this.client
+      .from('paper_signals')
+      .select('*')
+      .eq('status', 'WATCHING')
+      .order('created_at', { ascending: true });
+
+    if (userId) {
+      query = query.eq('user_id', String(userId));
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  }
+
+  async updatePaperSignal(signalId, updates) {
+    const { data, error } = await this.client
+      .from('paper_signals')
+      .update(updates)
+      .eq('id', signalId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  }
+
+  async getPaperSignalsSince(userId, since) {
+    const sinceIso = since instanceof Date ? since.toISOString() : since;
+
+    const { data, error } = await this.client
+      .from('paper_signals')
+      .select('*')
+      .eq('user_id', String(userId))
+      .gte('created_at', sinceIso)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('❌ getPaperSignalsSince error:', error.message);
+      return [];
+    }
+
+    return data || [];
+  }
+
   async getTradesSince(userId, since, options = {}) {
     const sinceIso = since instanceof Date ? since.toISOString() : since;
     let query = this.client
