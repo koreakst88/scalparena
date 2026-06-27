@@ -57,6 +57,7 @@ class ScalpArenaBot {
     this.ready = false;
     this.commandsRegistered = false;
     this.pendingSignals = new Map();
+    this.candidateSnapshots = new Map();
 
     console.log('✅ ScalpArenaBot initialized');
     this._registerCommands();
@@ -578,9 +579,11 @@ ${insights}
 
     if (mode === 'full') {
       await this._sendPlainChunks(userId, CandidateFormatter.formatFull(reports));
-      return this._sendPlain(userId, '👇 Действия с текущими candidates:', {
+      const message = await this._sendPlain(userId, '👇 Действия с текущими candidates:', {
         reply_markup: keyboard,
       });
+      this._storeCandidateSnapshot(userId, message, reports, actionable);
+      return message;
     }
 
     if (mode === 'paper') {
@@ -589,28 +592,28 @@ ${insights}
           userId,
           '🧪 Paper tracking выключен. Включи PAPER_SIGNAL_TRACKING_ENABLED=true в Railway Variables и redeploy, чтобы записывать candidates.'
         );
-        return this._sendPlain(userId, CandidateFormatter.formatTop(reports, actionable), {
+        const message = await this._sendPlain(userId, CandidateFormatter.formatTop(reports, actionable), {
           reply_markup: keyboard,
         });
+        this._storeCandidateSnapshot(userId, message, reports, actionable);
+        return message;
       }
 
-      const tracked = [];
-
-      for (const candidate of actionable) {
-        const paperSignal = CandidateEngine.toPaperSignal(candidate);
-        const saved = await this._trackPaperSignal(userId, paperSignal, 'CANDIDATE_ENGINE');
-        if (saved) tracked.push(candidate);
-      }
+      const tracked = await this._trackCandidateActionables(userId, actionable);
 
       await this._sendPlain(userId, CandidateFormatter.formatPaperResult(tracked));
-      return this._sendPlain(userId, CandidateFormatter.formatTop(reports, actionable), {
+      const message = await this._sendPlain(userId, CandidateFormatter.formatTop(reports, actionable), {
         reply_markup: keyboard,
       });
+      this._storeCandidateSnapshot(userId, message, reports, actionable);
+      return message;
     }
 
-    return this._sendPlain(userId, CandidateFormatter.formatTop(reports, actionable), {
+    const message = await this._sendPlain(userId, CandidateFormatter.formatTop(reports, actionable), {
       reply_markup: keyboard,
     });
+    this._storeCandidateSnapshot(userId, message, reports, actionable);
+    return message;
   }
 
   async _onPatterns(msg) {
@@ -710,6 +713,85 @@ ${insights}`
         ],
       ],
     };
+  }
+
+  async _writeCandidateSnapshotToPaper(userId, messageId) {
+    const snapshot = this._getCandidateSnapshot(userId, messageId);
+
+    if (!snapshot) {
+      return this._sendPlain(
+        userId,
+        '⏰ Этот отчет candidates уже устарел. Нажми «Обновить» и запиши входы из нового отчета.'
+      );
+    }
+
+    if (!PAPER_SIGNAL_TRACKING_ENABLED) {
+      return this._sendPlain(
+        userId,
+        '🧪 Paper tracking выключен. Включи PAPER_SIGNAL_TRACKING_ENABLED=true в Railway Variables и redeploy, чтобы записывать candidates.'
+      );
+    }
+
+    if (snapshot.trackedAt) {
+      return this._sendPlain(userId, '✅ Эти входы уже были записаны в paper из этого отчета.');
+    }
+
+    const tracked = await this._trackCandidateActionables(userId, snapshot.actionable);
+    snapshot.trackedAt = Date.now();
+    return this._sendPlain(userId, CandidateFormatter.formatPaperResult(tracked));
+  }
+
+  async _trackCandidateActionables(userId, actionable = []) {
+    const tracked = [];
+
+    for (const candidate of actionable) {
+      const paperSignal = CandidateEngine.toPaperSignal(candidate);
+      const saved = await this._trackPaperSignal(userId, paperSignal, 'CANDIDATE_ENGINE');
+      if (saved) tracked.push(candidate);
+    }
+
+    return tracked;
+  }
+
+  _storeCandidateSnapshot(userId, message, reports, actionable) {
+    if (!message?.message_id) return;
+
+    const key = this._candidateSnapshotKey(userId, message.message_id);
+    this.candidateSnapshots.set(key, {
+      reports,
+      actionable,
+      createdAt: Date.now(),
+    });
+    this._cleanupCandidateSnapshots();
+  }
+
+  _getCandidateSnapshot(userId, messageId) {
+    const key = this._candidateSnapshotKey(userId, messageId);
+    const snapshot = this.candidateSnapshots.get(key);
+    const maxAgeMs = 10 * 60 * 1000;
+
+    if (!snapshot) return null;
+    if (Date.now() - snapshot.createdAt > maxAgeMs) {
+      this.candidateSnapshots.delete(key);
+      return null;
+    }
+
+    return snapshot;
+  }
+
+  _candidateSnapshotKey(userId, messageId) {
+    return `${userId}:${messageId}`;
+  }
+
+  _cleanupCandidateSnapshots() {
+    const maxAgeMs = 10 * 60 * 1000;
+    const now = Date.now();
+
+    for (const [key, snapshot] of this.candidateSnapshots.entries()) {
+      if (now - snapshot.createdAt > maxAgeMs) {
+        this.candidateSnapshots.delete(key);
+      }
+    }
   }
 
   _getCommandParts(text = '') {
@@ -850,7 +932,7 @@ ${insights}`
     }
 
     if (data === 'candidates_paper') {
-      return this._sendCandidates(userId, 'paper');
+      return this._writeCandidateSnapshotToPaper(userId, query.message.message_id);
     }
 
     if (data === 'candidates_stats') {
@@ -1061,20 +1143,22 @@ Exit:  \`$${price}\`
 
   async _send(chatId, text, options = {}) {
     try {
-      await this.bot.sendMessage(chatId, text, {
+      return this.bot.sendMessage(chatId, text, {
         parse_mode: 'Markdown',
         ...options,
       });
     } catch (e) {
       console.error(`❌ Send error to ${chatId}:`, e.message);
+      return null;
     }
   }
 
   async _sendPlain(chatId, text, options = {}) {
     try {
-      await this.bot.sendMessage(chatId, text, options);
+      return this.bot.sendMessage(chatId, text, options);
     } catch (e) {
       console.error(`❌ Send plain error to ${chatId}:`, e.message);
+      return null;
     }
   }
 
