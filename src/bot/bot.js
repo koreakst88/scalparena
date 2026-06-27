@@ -688,17 +688,22 @@ ${insights}`
   }
 
   _getCandidateKeyboard(actionableCount = 0) {
+    const paperButton = actionableCount > 0
+      ? {
+          text: `🧪 Записать входы (${actionableCount})`,
+          callback_data: 'candidates_paper',
+        }
+      : {
+          text: '🧪 Нет входов для записи',
+          callback_data: 'candidates_paper',
+        };
+
     return {
       inline_keyboard: [
-        [
-          {
-            text: `🧪 Записать actionable (${actionableCount})`,
-            callback_data: 'candidates_paper',
-          },
-        ],
+        [paperButton],
         [
           { text: '🔄 Обновить', callback_data: 'candidates_refresh' },
-          { text: '📋 Full', callback_data: 'candidates_full' },
+          { text: '📋 Детали', callback_data: 'candidates_full' },
         ],
         [
           { text: '📊 Paper stats 7д', callback_data: 'candidates_stats' },
