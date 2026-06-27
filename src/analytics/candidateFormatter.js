@@ -14,9 +14,6 @@ class CandidateFormatter {
       lines.push('');
     });
 
-    lines.push('💡 Детали: /candidates full');
-    lines.push('🧪 Записать топ в paper: /candidates paper');
-
     return lines.join('\n').trim();
   }
 

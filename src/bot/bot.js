@@ -558,30 +558,40 @@ ${insights}
 
   async _onCandidates(msg) {
     const userId = String(msg.chat.id);
+    const parts = this._getCommandParts(msg.text);
+    const mode = parts[1] || 'top';
+
+    return this._sendCandidates(userId, mode);
+  }
+
+  async _sendCandidates(userId, mode = 'top') {
 
     if (!this.ready) {
       return this._send(userId, '⏳ Провайдер данных загружается... Попробуй через 30 сек');
     }
 
-    const parts = this._getCommandParts(msg.text);
-    const mode = parts[1] || 'top';
-
     await this._sendPlain(userId, '🧠 Анализирую market candidates по 15 парам...');
 
     const reports = CandidateEngine.scanAll(this.provider);
     const actionable = CandidateEngine.getActionableCandidates(reports, 3);
+    const keyboard = this._getCandidateKeyboard(actionable.length);
 
     if (mode === 'full') {
-      return this._sendPlainChunks(userId, CandidateFormatter.formatFull(reports));
+      await this._sendPlainChunks(userId, CandidateFormatter.formatFull(reports));
+      return this._sendPlain(userId, '👇 Действия с текущими candidates:', {
+        reply_markup: keyboard,
+      });
     }
 
     if (mode === 'paper') {
       if (!PAPER_SIGNAL_TRACKING_ENABLED) {
         await this._sendPlain(
           userId,
-          '🧪 Paper tracking выключен. Включи PAPER_SIGNAL_TRACKING_ENABLED=true, чтобы /candidates paper записывал кандидатов.'
+          '🧪 Paper tracking выключен. Включи PAPER_SIGNAL_TRACKING_ENABLED=true в Railway Variables и redeploy, чтобы записывать candidates.'
         );
-        return this._sendPlain(userId, CandidateFormatter.formatTop(reports, actionable));
+        return this._sendPlain(userId, CandidateFormatter.formatTop(reports, actionable), {
+          reply_markup: keyboard,
+        });
       }
 
       const tracked = [];
@@ -593,10 +603,14 @@ ${insights}
       }
 
       await this._sendPlain(userId, CandidateFormatter.formatPaperResult(tracked));
-      return this._sendPlain(userId, CandidateFormatter.formatTop(reports, actionable));
+      return this._sendPlain(userId, CandidateFormatter.formatTop(reports, actionable), {
+        reply_markup: keyboard,
+      });
     }
 
-    return this._sendPlain(userId, CandidateFormatter.formatTop(reports, actionable));
+    return this._sendPlain(userId, CandidateFormatter.formatTop(reports, actionable), {
+      reply_markup: keyboard,
+    });
   }
 
   async _onPatterns(msg) {
@@ -659,7 +673,11 @@ ${insights}`
     if (!user) return this._send(userId, '❌ Сначала /start');
 
     const parts = this._getCommandParts(msg.text);
-    const period = this._parseStatsPeriod(parts[1]);
+    await this._sendPaperSignalStats(userId, parts[1]);
+  }
+
+  async _sendPaperSignalStats(userId, value) {
+    const period = this._parseStatsPeriod(value);
     const signals = await this.db.getPaperSignalsSince(userId, period.since);
     const stats = PaperSignalStats.calculate(signals);
 
@@ -667,6 +685,26 @@ ${insights}`
       userId,
       PaperSignalStats.format(stats, period.title.replace(/[*📊]/g, '').replace('Период:', '').trim())
     );
+  }
+
+  _getCandidateKeyboard(actionableCount = 0) {
+    return {
+      inline_keyboard: [
+        [
+          {
+            text: `🧪 Записать actionable (${actionableCount})`,
+            callback_data: 'candidates_paper',
+          },
+        ],
+        [
+          { text: '🔄 Обновить', callback_data: 'candidates_refresh' },
+          { text: '📋 Full', callback_data: 'candidates_full' },
+        ],
+        [
+          { text: '📊 Paper stats 7д', callback_data: 'candidates_stats' },
+        ],
+      ],
+    };
   }
 
   _getCommandParts(text = '') {
@@ -797,6 +835,22 @@ ${insights}`
     const data = query.data;
 
     await this.bot.answerCallbackQuery(query.id);
+
+    if (data === 'candidates_refresh') {
+      return this._sendCandidates(userId, 'top');
+    }
+
+    if (data === 'candidates_full') {
+      return this._sendCandidates(userId, 'full');
+    }
+
+    if (data === 'candidates_paper') {
+      return this._sendCandidates(userId, 'paper');
+    }
+
+    if (data === 'candidates_stats') {
+      return this._sendPaperSignalStats(userId, '7');
+    }
 
     if (data.startsWith('open_')) {
       const parts = data.split('_');
