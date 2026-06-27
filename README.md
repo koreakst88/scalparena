@@ -39,6 +39,27 @@ PAPER_SIGNAL_ALERTS_ENABLED=true
 
 Candidate Engine не заменяет текущий `/scan`: он показывает не только строгие сигналы, но и “почти-сценарии” со score, рисками и альтернативами.
 
+### Candidate Auto Scan
+
+Alert-only авто-режим для Candidate Engine. Он не открывает сделки на Bybit: только присылает сильные рекомендации и записывает их в paper tracking.
+
+```env
+CANDIDATE_AUTO_SCAN_ENABLED=true
+CANDIDATE_AUTO_SCAN_INTERVAL_MS=600000
+CANDIDATE_AUTO_MIN_SCORE=75
+CANDIDATE_AUTO_MIN_RR=1.2
+CANDIDATE_AUTO_COOLDOWN_MINUTES=90
+CANDIDATE_AUTO_MAX_ALERTS=2
+```
+
+Telegram команды:
+
+- `/candidate_auto status` - показать текущий режим и пороги
+- `/candidate_auto on` - включить авто-candidates для текущего runtime
+- `/candidate_auto off` - выключить авто-candidates для текущего runtime
+
+Антиспам-фильтры: отправляются только готовые входы, пары с активным paper-сигналом пропускаются, по каждой паре действует cooldown.
+
 ## Deployment
 
 На Railway - см. `deployment/Procfile`

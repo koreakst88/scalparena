@@ -1,11 +1,17 @@
 // src/engine/scheduler.js
 
 const SignalDetector = require('./signalDetector');
+const CandidateEngine = require('./candidateEngine');
 const RiskManager = require('./riskManager');
 const {
   PAPER_SIGNAL_TRACKING_ENABLED,
   PAPER_SIGNAL_ALERTS_ENABLED,
   PAPER_SIGNAL_AUTO_LOG_ENABLED,
+  CANDIDATE_AUTO_SCAN_INTERVAL_MS,
+  CANDIDATE_AUTO_MIN_SCORE,
+  CANDIDATE_AUTO_MIN_RR,
+  CANDIDATE_AUTO_COOLDOWN_MINUTES,
+  CANDIDATE_AUTO_MAX_ALERTS,
 } = require('../config/paperSignals');
 
 const SCAN_INTERVAL_MS = 15 * 60 * 1000;
@@ -17,21 +23,33 @@ class Scheduler {
     this.db = db;
     this.provider = provider;
     this.scanTimer = null;
+    this.candidateScanTimer = null;
     this.resetTimer = null;
     this.lastScanTime = null;
+    this.lastCandidateScanTime = null;
+    this.candidateAlertCooldowns = new Map();
   }
 
   start() {
-    if (this.scanTimer || this.resetTimer) return;
+    if (this.scanTimer || this.candidateScanTimer || this.resetTimer) return;
 
     console.log('⏰ Scheduler started');
 
     this.scanTimer = setInterval(() => this._autoScan(), SCAN_INTERVAL_MS);
+    this.candidateScanTimer = setInterval(
+      () => this._candidateAutoScan(),
+      CANDIDATE_AUTO_SCAN_INTERVAL_MS
+    );
     this._scheduleDailyReset();
 
     setTimeout(() => this._autoScan(), 5 * 60 * 1000);
+    setTimeout(() => this._candidateAutoScan(), 6 * 60 * 1000);
 
     console.log('✅ Auto-scan every 15 min | Daily reset at 08:00 Seoul');
+    console.log(
+      `🧠 Candidate auto-scan every ${Math.round(CANDIDATE_AUTO_SCAN_INTERVAL_MS / 60000)} min ` +
+      `| score>=${CANDIDATE_AUTO_MIN_SCORE} RR>=${CANDIDATE_AUTO_MIN_RR}`
+    );
     console.log('⏳ First auto-scan in 5 minutes (WS data accumulation)');
   }
 
@@ -39,6 +57,10 @@ class Scheduler {
     if (this.scanTimer) {
       clearInterval(this.scanTimer);
       this.scanTimer = null;
+    }
+    if (this.candidateScanTimer) {
+      clearInterval(this.candidateScanTimer);
+      this.candidateScanTimer = null;
     }
     if (this.resetTimer) {
       clearTimeout(this.resetTimer);
@@ -75,6 +97,157 @@ class Scheduler {
     } catch (error) {
       console.error('❌ Auto-scan error:', error.message);
     }
+  }
+
+  async _candidateAutoScan() {
+    console.log('🧠 Candidate auto-scan triggered...');
+    this.lastCandidateScanTime = new Date();
+
+    try {
+      const { data: users, error } = await this.db.client
+        .from('users')
+        .select('*')
+        .eq('auto_scan_enabled', true);
+
+      if (error || !users?.length) return;
+
+      const enabledUsers = users.filter((user) => (
+        typeof this.bot._isCandidateAutoEnabled === 'function' &&
+        this.bot._isCandidateAutoEnabled(user.telegram_id)
+      ));
+
+      if (!enabledUsers.length) {
+        console.log('🧠 Candidate auto-scan: disabled for all users');
+        return;
+      }
+
+      const reports = CandidateEngine.scanAll(this.provider);
+      const candidates = this._getStrictCandidateAlerts(reports);
+
+      if (!candidates.length) {
+        console.log('🧠 Candidate auto-scan: no strict candidates');
+        return;
+      }
+
+      console.log(`🧠 Candidate auto-scan: ${candidates.length} strict candidate(s) found`);
+
+      for (const user of enabledUsers) {
+        await this._sendCandidateAlertsToUser(user, candidates);
+      }
+    } catch (error) {
+      console.error('❌ Candidate auto-scan error:', error.message);
+    }
+  }
+
+  _getStrictCandidateAlerts(reports) {
+    return CandidateEngine.getActionableCandidates(reports, 15)
+      .filter((candidate) => candidate.score >= CANDIDATE_AUTO_MIN_SCORE)
+      .filter((candidate) => candidate.riskReward >= CANDIDATE_AUTO_MIN_RR)
+      .slice(0, CANDIDATE_AUTO_MAX_ALERTS);
+  }
+
+  async _sendCandidateAlertsToUser(user, candidates) {
+    const userId = String(user.telegram_id);
+    const activeSignals = PAPER_SIGNAL_TRACKING_ENABLED
+      ? await this.db.getActivePaperSignals(userId)
+      : [];
+    const activePairs = new Set(
+      activeSignals.map((signal) => this._normalizePair(signal.pair))
+    );
+
+    const alertable = candidates.filter((candidate) => {
+      const pair = this._normalizePair(candidate.pair);
+
+      if (activePairs.has(pair)) {
+        console.log(`🧪 Candidate ${pair} skipped for ${userId}: active paper signal exists`);
+        return false;
+      }
+
+      if (this._isCandidatePairInCooldown(userId, pair)) {
+        console.log(`⏸️ Candidate ${pair} skipped for ${userId}: alert cooldown`);
+        return false;
+      }
+
+      return true;
+    }).slice(0, CANDIDATE_AUTO_MAX_ALERTS);
+
+    if (!alertable.length) return;
+
+    const paperModeText = PAPER_SIGNAL_TRACKING_ENABLED
+      ? 'Сигналы записываю в paper.'
+      : 'Paper tracking OFF: пришлю алерт, но статистика не запишется.';
+
+    await this.bot._sendPlain(
+      userId,
+      `🧠 Candidate auto: найдено ${alertable.length} готовых вход(ов).\n` +
+      `Live Bybit orders: OFF. ${paperModeText}`
+    );
+
+    for (const candidate of alertable) {
+      const paperSignal = await this.bot._trackPaperSignal(
+        userId,
+        CandidateEngine.toPaperSignal(candidate),
+        'CANDIDATE_AUTO'
+      );
+      this._markCandidatePairAlerted(userId, candidate.pair);
+
+      await this.bot._sendPlain(
+        userId,
+        this._formatCandidateAutoAlert(candidate, paperSignal),
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: '📊 Paper stats 7д', callback_data: 'candidates_stats' },
+                { text: '📋 Candidates', callback_data: 'candidates_refresh' },
+              ],
+            ],
+          },
+        }
+      );
+    }
+  }
+
+  _formatCandidateAutoAlert(candidate, paperSignal) {
+    return [
+      '🧠 ГОТОВЫЙ ВХОД (candidate auto)',
+      '━━━━━━━━━━━━━━━━━━━━',
+      `${candidate.pair} ${candidate.direction}`,
+      `${this._formatSignalLabel(candidate.strategy)} | score ${candidate.score}/100 | RR ${candidate.riskReward}`,
+      `Entry $${candidate.entryPrice} | TP $${candidate.takeProfit} | SL $${candidate.stopLoss}`,
+      `${this._formatSignalLabel(candidate.context.marketRegime)} | RSI ${candidate.context.rsi} | Vol ${candidate.context.volume}% | MACD ${candidate.context.macdBias}`,
+      `Причина: ${candidate.summary}`,
+      paperSignal
+        ? '🧪 Записано в paper для TP/SL/timeout статистики'
+        : '⚠️ Paper не записан: tracking выключен или дубль по этому сетапу',
+      '',
+      'Реальная сделка на Bybit не открывается автоматически.',
+    ].join('\n');
+  }
+
+  _isCandidatePairInCooldown(userId, pair) {
+    const key = this._candidateCooldownKey(userId, pair);
+    const lastAlertAt = this.candidateAlertCooldowns.get(key);
+    if (!lastAlertAt) return false;
+
+    const cooldownMs = CANDIDATE_AUTO_COOLDOWN_MINUTES * 60 * 1000;
+    if (Date.now() - lastAlertAt > cooldownMs) {
+      this.candidateAlertCooldowns.delete(key);
+      return false;
+    }
+
+    return true;
+  }
+
+  _markCandidatePairAlerted(userId, pair) {
+    this.candidateAlertCooldowns.set(
+      this._candidateCooldownKey(userId, pair),
+      Date.now()
+    );
+  }
+
+  _candidateCooldownKey(userId, pair) {
+    return `${userId}:${this._normalizePair(pair)}`;
   }
 
   async _sendSignalsToUser(user, signals) {
@@ -327,10 +500,16 @@ ${paperSignal ? '\n🧪 Paper signal записан для отслеживан�
       .join(', ');
   }
 
+  _formatSignalLabel(value) {
+    return String(value || 'UNKNOWN').replace(/_/g, ' ');
+  }
+
   getStatus() {
     return {
       lastScan: this.lastScanTime,
       nextScan: new Date(Date.now() + SCAN_INTERVAL_MS),
+      lastCandidateScan: this.lastCandidateScanTime,
+      nextCandidateScan: new Date(Date.now() + CANDIDATE_AUTO_SCAN_INTERVAL_MS),
       cryptoMarketOpen: true,
       msUntilReset: this._getMsUntilNext8am(),
     };

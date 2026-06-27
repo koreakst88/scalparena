@@ -21,12 +21,19 @@ const { CURRENT_STRATEGY_VERSION, LEGACY_STRATEGY_VERSION } = require('../config
 const {
   PAPER_SIGNAL_TRACKING_ENABLED,
   PAPER_SIGNAL_TTL_MINUTES,
+  CANDIDATE_AUTO_SCAN_ENABLED,
+  CANDIDATE_AUTO_SCAN_INTERVAL_MS,
+  CANDIDATE_AUTO_MIN_SCORE,
+  CANDIDATE_AUTO_MIN_RR,
+  CANDIDATE_AUTO_COOLDOWN_MINUTES,
+  CANDIDATE_AUTO_MAX_ALERTS,
 } = require('../config/paperSignals');
 
 const BOT_COMMANDS = [
   { command: 'start', description: 'Запуск и профиль трейдера' },
   { command: 'scan', description: 'Строгие Hybrid сигналы' },
   { command: 'candidates', description: 'Топ сценариев: full/paper' },
+  { command: 'candidate_auto', description: 'Авто candidates: on/off/status' },
   { command: 'signals', description: 'Paper TP/SL статистика: 7/30/all' },
   { command: 'patterns', description: 'Паттерны: full 14/30/all' },
   { command: 'status', description: 'Открытые позиции' },
@@ -58,6 +65,7 @@ class ScalpArenaBot {
     this.commandsRegistered = false;
     this.pendingSignals = new Map();
     this.candidateSnapshots = new Map();
+    this.candidateAutoOverrides = new Map();
 
     console.log('✅ ScalpArenaBot initialized');
     this._registerCommands();
@@ -113,6 +121,7 @@ class ScalpArenaBot {
     this.bot.onText(/\/exit (.+)/, this._safe((msg, match) => this._onExit(msg, match)));
     this.bot.onText(/\/stats/, this._safe((msg) => this._onStats(msg)));
     this.bot.onText(/\/candidates/, this._safe((msg) => this._onCandidates(msg)));
+    this.bot.onText(/\/candidate_auto(?:\s+(\S+))?/, this._safe((msg, match) => this._onCandidateAuto(msg, match)));
     this.bot.onText(/\/signals/, this._safe((msg) => this._onSignals(msg)));
     this.bot.onText(/\/signal_stats/, this._safe((msg) => this._onSignals(msg)));
     this.bot.onText(/\/patterns/, this._safe((msg) => this._onPatterns(msg)));
@@ -565,6 +574,27 @@ ${insights}
     return this._sendCandidates(userId, mode);
   }
 
+  async _onCandidateAuto(msg, match) {
+    const userId = String(msg.chat.id);
+    const action = String(match?.[1] || 'status').toLowerCase();
+
+    if (action === 'on') {
+      this.candidateAutoOverrides.set(userId, true);
+      return this._sendPlain(userId, this._formatCandidateAutoStatus(userId, '✅ Candidate auto включен для текущего runtime.'));
+    }
+
+    if (action === 'off') {
+      this.candidateAutoOverrides.set(userId, false);
+      return this._sendPlain(userId, this._formatCandidateAutoStatus(userId, '⏸️ Candidate auto выключен для текущего runtime.'));
+    }
+
+    if (action !== 'status') {
+      return this._sendPlain(userId, 'Используй: /candidate_auto on, /candidate_auto off или /candidate_auto status');
+    }
+
+    return this._sendPlain(userId, this._formatCandidateAutoStatus(userId));
+  }
+
   async _sendCandidates(userId, mode = 'top') {
 
     if (!this.ready) {
@@ -798,6 +828,36 @@ ${insights}`
     return String(text).trim().split(/\s+/).filter(Boolean);
   }
 
+  _isCandidateAutoEnabled(userId) {
+    const key = String(userId);
+    if (this.candidateAutoOverrides.has(key)) {
+      return this.candidateAutoOverrides.get(key);
+    }
+
+    return CANDIDATE_AUTO_SCAN_ENABLED;
+  }
+
+  _formatCandidateAutoStatus(userId, prefix = '') {
+    const enabled = this._isCandidateAutoEnabled(userId);
+    const override = this.candidateAutoOverrides.has(String(userId))
+      ? 'runtime override'
+      : 'Railway env default';
+
+    return [
+      prefix,
+      '🧠 Candidate auto status',
+      '━━━━━━━━━━━━━━━━━━━━',
+      `Статус: ${enabled ? 'ON' : 'OFF'} (${override})`,
+      `Интервал: ${Math.round(CANDIDATE_AUTO_SCAN_INTERVAL_MS / 60000)} мин`,
+      `Фильтр: score >= ${CANDIDATE_AUTO_MIN_SCORE}, RR >= ${CANDIDATE_AUTO_MIN_RR}`,
+      `Cooldown по паре: ${CANDIDATE_AUTO_COOLDOWN_MINUTES} мин`,
+      `Макс алертов за цикл: ${CANDIDATE_AUTO_MAX_ALERTS}`,
+      'Live Bybit orders: OFF',
+      '',
+      'Постоянно включить после redeploy: CANDIDATE_AUTO_SCAN_ENABLED=true в Railway Variables.',
+    ].filter(Boolean).join('\n');
+  }
+
   _parseDaysPeriod(value, defaultDays = 7) {
     if (value === 'all') {
       return { days: 9999, isAll: true };
@@ -894,6 +954,8 @@ ${insights}`
 /candidates — топ торговых сценариев сейчас
 /candidates full — диагностика по всем парам
 /candidates paper — записать топ-кандидатов в paper tracking
+/candidate_auto status — статус авто-candidates
+/candidate_auto on / off — включить/выключить авто-candidates в runtime
 /signals 7 / 30 / all — paper-сигналы и TP/SL статистика
 /patterns — паттерны за 7 дней
 /patterns full 14 / 30 / all — детальная аналитика
