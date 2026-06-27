@@ -94,6 +94,10 @@ const checks = [
   { name: 'NO_TRADE can beat weak setup', pass: noTrade.action === 'NO_TRADE' && noTrade.score > weakPullback.score },
   { name: 'Candidate converts to paper signal shape', pass: paperSignal.type === 'LONG' && paperSignal.strategy === 'TREND_PULLBACK' },
   { name: 'Actionable filter keeps strong candidates', pass: CandidateEngine.getActionableCandidates([{ best: longPullback }]).length === 1 },
+  { name: 'Sort prefers stronger trade candidate over stronger NO_TRADE score', pass: CandidateEngine.sortReports([
+    { pair: 'WEAK', best: { action: 'NO_TRADE', strategy: 'NO_TRADE', score: 85 }, bestTrade: { action: 'TRADE', score: 39, riskReward: 1 } },
+    { pair: 'WATCH', best: { action: 'NO_TRADE', strategy: 'NO_TRADE', score: 79 }, bestTrade: { action: 'TRADE', score: 52, riskReward: 1 } },
+  ])[0].pair === 'WATCH' },
 ];
 
 console.log('🎯 Final checks:');

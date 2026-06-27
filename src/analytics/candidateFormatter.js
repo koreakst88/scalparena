@@ -65,17 +65,23 @@ class CandidateFormatter {
   }
 
   static _formatReportSummary(report, index) {
-    const candidate = report.best;
+    const candidate = report.bestTrade || report.best;
 
-    if (candidate.action === 'NO_TRADE') {
-      return `${index}. ${report.pair}: NO_TRADE ${candidate.score}/100\n${candidate.summary}`;
+    if (!candidate || candidate.action === 'NO_TRADE') {
+      return `${index}. ${report.pair}: WAIT\n${report.best.summary}`;
     }
 
+    const status = candidate.score >= 70 ? 'ACTIONABLE' : 'WATCH';
+    const decision = report.best.action === 'NO_TRADE'
+      ? `Decision: NO_TRADE (${report.best.summary.replace('NO_TRADE: ', '')})`
+      : `Decision: ${status}`;
+
     return [
-      `${index}. ${candidate.pair} ${candidate.direction} ${candidate.strategy}`,
+      `${index}. ${candidate.pair} ${candidate.direction} ${candidate.strategy} ${status}`,
       `Score: ${candidate.score}/100 | RR: ${candidate.riskReward}`,
       `Entry: $${candidate.entryPrice} | TP: $${candidate.takeProfit} | SL: $${candidate.stopLoss}`,
       `Context: ${candidate.context.marketRegime}, RSI ${candidate.context.rsi}, Vol ${candidate.context.volume}%, MACD ${candidate.context.macdBias}`,
+      decision,
     ].join('\n');
   }
 

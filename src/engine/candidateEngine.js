@@ -35,8 +35,10 @@ class CandidateEngine {
     return reports.sort((a, b) => {
       const rankDiff = this._getReportRank(b) - this._getReportRank(a);
       if (rankDiff !== 0) return rankDiff;
-      if (b.best.score !== a.best.score) return b.best.score - a.best.score;
-      if (b.best.riskReward !== a.best.riskReward) return b.best.riskReward - a.best.riskReward;
+      const aCandidate = a.bestTrade || a.best;
+      const bCandidate = b.bestTrade || b.best;
+      if (bCandidate.score !== aCandidate.score) return bCandidate.score - aCandidate.score;
+      if (bCandidate.riskReward !== aCandidate.riskReward) return bCandidate.riskReward - aCandidate.riskReward;
       return String(a.pair).localeCompare(String(b.pair));
     });
   }
@@ -69,13 +71,14 @@ class CandidateEngine {
       pair,
       context: this._summarizeContext(context),
       best,
+      bestTrade: bestTradingCandidate || null,
       candidates: allCandidates,
     };
   }
 
   static getActionableCandidates(reports, limit = 3) {
     return reports
-      .map((report) => report.best)
+      .map((report) => report.bestTrade || report.best)
       .filter((candidate) => candidate.action !== 'NO_TRADE')
       .filter((candidate) => candidate.score >= CANDIDATE_MIN_SCORE)
       .filter((candidate) => candidate.riskReward >= CANDIDATE_MIN_RR)
@@ -420,8 +423,9 @@ class CandidateEngine {
   }
 
   static _getReportRank(report) {
-    if (report.best.action === 'TRADE' && report.best.score >= CANDIDATE_MIN_SCORE) return 3;
-    if (report.best.action === 'TRADE') return 2;
+    const candidate = report.bestTrade || report.best;
+    if (candidate.action === 'TRADE' && candidate.score >= CANDIDATE_MIN_SCORE) return 3;
+    if (candidate.action === 'TRADE') return 2;
     if (report.best.strategy === 'NO_DATA') return 0;
     return 1;
   }
