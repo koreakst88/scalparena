@@ -173,7 +173,9 @@ class CandidateEngine {
 
   static _buildNoTradeCandidate(pair, context, bestTradingCandidate) {
     const bestScore = bestTradingCandidate?.score || 0;
-    const score = Math.max(0, 100 - bestScore);
+    const score = bestScore >= CANDIDATE_MIN_SCORE
+      ? Math.max(0, 100 - bestScore)
+      : Math.min(85, 70 + Math.round((CANDIDATE_MIN_SCORE - bestScore) / 2));
     const risks = bestTradingCandidate?.risks?.length
       ? bestTradingCandidate.risks
       : ['нет сценария с достаточным преимуществом'];
@@ -215,7 +217,7 @@ class CandidateEngine {
       strategy,
       entryMode,
       direction,
-      score: this._clampScore(score),
+      score: this._clampScore(this._capScoreForStrategy(strategy, direction, score, context)),
       riskReward: this._round(riskReward, 2),
       entryPrice: this._round(entryPrice, 8),
       stopLoss: this._round(stopLoss, 8),
@@ -248,6 +250,27 @@ class CandidateEngine {
     if (Math.abs(context.market.roc12) >= 1.2) score += 5;
 
     return score;
+  }
+
+  static _capScoreForStrategy(strategy, direction, score, context) {
+    if (strategy !== 'TREND_PULLBACK') return score;
+
+    let capped = score;
+    const expectedRegime = direction === 'LONG' ? 'TREND_UP' : 'TREND_DOWN';
+    const emaDistance = this._getEmaDistancePercent(context);
+
+    if (context.market.regime !== expectedRegime) capped = Math.min(capped, 55);
+    if (!this._isMacdAligned(direction, context.macdBias)) capped = Math.min(capped, 65);
+    if (emaDistance > 1.2) capped = Math.min(capped, 62);
+    else if (emaDistance > 0.8) capped = Math.min(capped, 78);
+
+    if (context.rsi < 35 || context.rsi > 65) capped = Math.min(capped, 62);
+    else if (context.rsi < 40 || context.rsi > 60) capped = Math.min(capped, 72);
+
+    if (direction === 'LONG' && context.currentPrice < context.market.ema20) capped = Math.min(capped, 60);
+    if (direction === 'SHORT' && context.currentPrice > context.market.ema20) capped = Math.min(capped, 60);
+
+    return capped;
   }
 
   static _scoreBreakout(direction, context) {
