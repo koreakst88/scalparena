@@ -61,6 +61,26 @@ Telegram команды:
 
 Антиспам-фильтры: отправляются только готовые входы, пары с активным paper-сигналом пропускаются, по каждой паре действует cooldown.
 
+## PumpHunter Lab
+
+Отдельный paper-only режим для агрессивных pump continuation сигналов. Он не заменяет `/scan` и `/candidates`, а добавляет новый тип сигналов `PUMP_HUNTER`.
+
+```env
+PUMP_HUNTER_SCAN_LIMIT=40
+PUMP_HUNTER_KLINE_INTERVAL=15
+PUMP_HUNTER_KLINE_LIMIT=96
+PUMP_HUNTER_ACTIONABLE_LIMIT=3
+PUMP_HUNTER_USE_TESTNET=false
+```
+
+Telegram команды:
+
+- `/pump` - топ pump-кандидатов сейчас
+- `/pump full` - подробная диагностика
+- `/pump paper` - записать готовые pump-входы в paper tracking
+
+Логика v1: ищем монеты, которые уже дали fresh move от локального low, но еще не выглядят слишком поздними. TP +20%, SL -15%, live Bybit orders OFF.
+
 ## Deployment
 
 На Railway - см. `deployment/Procfile`

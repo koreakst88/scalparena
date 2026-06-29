@@ -37,6 +37,9 @@ class BybitDataProvider {
       ? 'wss://stream-testnet.bybit.com/v5/public/linear'
       : 'wss://stream.bybit.com/v5/public/linear';
     this.restBase = this.isTestnet ? 'api-testnet.bybit.com' : 'api.bybit.com';
+    this.publicMarketRestBase = process.env.PUMP_HUNTER_USE_TESTNET === 'true'
+      ? this.restBase
+      : 'api.bybit.com';
 
     this.ws = null;
     this.candleBuffer = {};
@@ -303,6 +306,50 @@ class BybitDataProvider {
 
   getPairs() {
     return this.validPairs;
+  }
+
+  async getLinearTickers() {
+    try {
+      const response = await axios.get(`https://${this.publicMarketRestBase}/v5/market/tickers`, {
+        params: { category: 'linear' },
+        timeout: 15000,
+      });
+
+      return response.data?.result?.list || [];
+    } catch (error) {
+      console.error('❌ Bybit tickers request failed:', error.message);
+      return [];
+    }
+  }
+
+  async getRestKlines(pair, interval = '15', limit = 96) {
+    try {
+      const response = await axios.get(`https://${this.publicMarketRestBase}/v5/market/kline`, {
+        params: {
+          category: 'linear',
+          symbol: pair,
+          interval,
+          limit,
+        },
+        timeout: 15000,
+      });
+
+      return (response.data?.result?.list || [])
+        .map((candle) => ({
+          timestamp: Number(candle[0]),
+          open: Number(candle[1]),
+          high: Number(candle[2]),
+          low: Number(candle[3]),
+          close: Number(candle[4]),
+          volume: Number(candle[5]),
+          turnover: Number(candle[6]),
+          confirm: true,
+        }))
+        .sort((a, b) => a.timestamp - b.timestamp);
+    } catch (error) {
+      console.error(`❌ Bybit klines request failed for ${pair}:`, error.message);
+      return [];
+    }
   }
 
   onCandleUpdate(callback) {

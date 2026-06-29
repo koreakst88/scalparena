@@ -7,6 +7,7 @@ const { BybitDataProvider } = require('../data/bybitProvider');
 const SupabaseClient = require('../data/supabaseClient');
 const SignalDetector = require('../engine/signalDetector');
 const CandidateEngine = require('../engine/candidateEngine');
+const PumpHunterEngine = require('../engine/pumpHunterEngine');
 const RiskManager = require('../engine/riskManager');
 const FeeCalculator = require('../engine/feeCalculator');
 const PositionMonitor = require('../engine/positionMonitor');
@@ -16,8 +17,15 @@ const GptAnalyzer = require('../analytics/gptAnalyzer');
 const StatsCalculator = require('../analytics/stats');
 const PaperSignalStats = require('../analytics/paperSignalStats');
 const CandidateFormatter = require('../analytics/candidateFormatter');
+const PumpHunterFormatter = require('../analytics/pumpHunterFormatter');
 const { formatDetailedAnalytics } = require('../analytics/formatters');
 const { CURRENT_STRATEGY_VERSION, LEGACY_STRATEGY_VERSION } = require('../config/strategy');
+const {
+  PUMP_HUNTER_SCAN_LIMIT,
+  PUMP_HUNTER_KLINE_INTERVAL,
+  PUMP_HUNTER_KLINE_LIMIT,
+  PUMP_HUNTER_ACTIONABLE_LIMIT,
+} = require('../config/pumpHunter');
 const {
   PAPER_SIGNAL_TRACKING_ENABLED,
   PAPER_SIGNAL_TTL_MINUTES,
@@ -34,6 +42,7 @@ const BOT_COMMANDS = [
   { command: 'scan', description: 'Строгие Hybrid сигналы' },
   { command: 'candidates', description: 'Топ сценариев: full/paper' },
   { command: 'candidate_auto', description: 'Авто candidates: on/off/status' },
+  { command: 'pump', description: 'PumpHunter Lab: full/paper' },
   { command: 'signals', description: 'Paper TP/SL статистика: 7/30/all' },
   { command: 'patterns', description: 'Паттерны: full 14/30/all' },
   { command: 'status', description: 'Открытые позиции' },
@@ -65,6 +74,7 @@ class ScalpArenaBot {
     this.commandsRegistered = false;
     this.pendingSignals = new Map();
     this.candidateSnapshots = new Map();
+    this.pumpSnapshots = new Map();
     this.candidateAutoOverrides = new Map();
 
     console.log('✅ ScalpArenaBot initialized');
@@ -122,6 +132,7 @@ class ScalpArenaBot {
     this.bot.onText(/\/stats/, this._safe((msg) => this._onStats(msg)));
     this.bot.onText(/\/candidates/, this._safe((msg) => this._onCandidates(msg)));
     this.bot.onText(/\/candidate_?auto(?:\s+(\S+))?/, this._safe((msg, match) => this._onCandidateAuto(msg, match)));
+    this.bot.onText(/\/pump(?:\s+(\S+))?/, this._safe((msg) => this._onPump(msg)));
     this.bot.onText(/\/signals/, this._safe((msg) => this._onSignals(msg)));
     this.bot.onText(/\/signal_stats/, this._safe((msg) => this._onSignals(msg)));
     this.bot.onText(/\/patterns/, this._safe((msg) => this._onPatterns(msg)));
@@ -595,6 +606,54 @@ ${insights}
     return this._sendPlain(userId, this._formatCandidateAutoStatus(userId));
   }
 
+  async _onPump(msg) {
+    const userId = String(msg.chat.id);
+    const parts = this._getCommandParts(msg.text);
+    const mode = parts[1] || 'top';
+
+    return this._sendPumpHunter(userId, mode);
+  }
+
+  async _sendPumpHunter(userId, mode = 'top') {
+    await this._sendPlain(
+      userId,
+      `🚀 PumpHunter сканирует Bybit futures: top ${PUMP_HUNTER_SCAN_LIMIT} по импульсу...`
+    );
+
+    const reports = await PumpHunterEngine.scan(this.provider, {
+      scanLimit: PUMP_HUNTER_SCAN_LIMIT,
+      interval: PUMP_HUNTER_KLINE_INTERVAL,
+      klineLimit: PUMP_HUNTER_KLINE_LIMIT,
+    });
+    const actionable = PumpHunterEngine.getActionable(reports, PUMP_HUNTER_ACTIONABLE_LIMIT);
+    const keyboard = this._getPumpHunterKeyboard(actionable.length);
+
+    if (mode === 'full') {
+      await this._sendPlainChunks(userId, PumpHunterFormatter.formatFull(reports));
+      const message = await this._sendPlain(userId, '👇 Действия с текущим PumpHunter отчетом:', {
+        reply_markup: keyboard,
+      });
+      this._storePumpSnapshot(userId, message, reports, actionable);
+      return message;
+    }
+
+    if (mode === 'paper') {
+      const tracked = await this._trackPumpHunterActionables(userId, actionable);
+      await this._sendPlain(userId, PumpHunterFormatter.formatPaperResult(tracked));
+      const message = await this._sendPlain(userId, PumpHunterFormatter.formatTop(reports, actionable), {
+        reply_markup: keyboard,
+      });
+      this._storePumpSnapshot(userId, message, reports, actionable);
+      return message;
+    }
+
+    const message = await this._sendPlain(userId, PumpHunterFormatter.formatTop(reports, actionable), {
+      reply_markup: keyboard,
+    });
+    this._storePumpSnapshot(userId, message, reports, actionable);
+    return message;
+  }
+
   async _sendCandidates(userId, mode = 'top') {
 
     if (!this.ready) {
@@ -745,6 +804,31 @@ ${insights}`
     };
   }
 
+  _getPumpHunterKeyboard(actionableCount = 0) {
+    const paperButton = actionableCount > 0
+      ? {
+          text: `🧪 Записать pump-входы (${actionableCount})`,
+          callback_data: 'pump_paper',
+        }
+      : {
+          text: '🧪 Нет pump-входов для записи',
+          callback_data: 'pump_paper',
+        };
+
+    return {
+      inline_keyboard: [
+        [paperButton],
+        [
+          { text: '🔄 Обновить', callback_data: 'pump_refresh' },
+          { text: '📋 Детали', callback_data: 'pump_full' },
+        ],
+        [
+          { text: '📊 Paper stats 7д', callback_data: 'candidates_stats' },
+        ],
+      ],
+    };
+  }
+
   async _writeCandidateSnapshotToPaper(userId, messageId) {
     const snapshot = this._getCandidateSnapshot(userId, messageId);
 
@@ -771,12 +855,43 @@ ${insights}`
     return this._sendPlain(userId, CandidateFormatter.formatPaperResult(tracked));
   }
 
+  async _writePumpSnapshotToPaper(userId, messageId) {
+    const snapshot = this._getPumpSnapshot(userId, messageId);
+
+    if (!snapshot) {
+      return this._sendPlain(
+        userId,
+        '⏰ Этот PumpHunter отчет уже устарел. Нажми «Обновить» и запиши входы из нового отчета.'
+      );
+    }
+
+    if (snapshot.trackedAt) {
+      return this._sendPlain(userId, '✅ Эти pump-входы уже были записаны в paper из этого отчета.');
+    }
+
+    const tracked = await this._trackPumpHunterActionables(userId, snapshot.actionable);
+    snapshot.trackedAt = Date.now();
+    return this._sendPlain(userId, PumpHunterFormatter.formatPaperResult(tracked));
+  }
+
   async _trackCandidateActionables(userId, actionable = []) {
     const tracked = [];
 
     for (const candidate of actionable) {
       const paperSignal = CandidateEngine.toPaperSignal(candidate);
       const saved = await this._trackPaperSignal(userId, paperSignal, 'CANDIDATE_ENGINE');
+      if (saved) tracked.push(candidate);
+    }
+
+    return tracked;
+  }
+
+  async _trackPumpHunterActionables(userId, actionable = []) {
+    const tracked = [];
+
+    for (const candidate of actionable) {
+      const paperSignal = PumpHunterEngine.toPaperSignal(candidate);
+      const saved = await this._trackPaperSignal(userId, paperSignal, 'PUMP_HUNTER');
       if (saved) tracked.push(candidate);
     }
 
@@ -807,6 +922,47 @@ ${insights}`
     }
 
     return snapshot;
+  }
+
+  _storePumpSnapshot(userId, message, reports, actionable) {
+    if (!message?.message_id) return;
+
+    const key = this._pumpSnapshotKey(userId, message.message_id);
+    this.pumpSnapshots.set(key, {
+      reports,
+      actionable,
+      createdAt: Date.now(),
+    });
+    this._cleanupPumpSnapshots();
+  }
+
+  _getPumpSnapshot(userId, messageId) {
+    const key = this._pumpSnapshotKey(userId, messageId);
+    const snapshot = this.pumpSnapshots.get(key);
+    const maxAgeMs = 10 * 60 * 1000;
+
+    if (!snapshot) return null;
+    if (Date.now() - snapshot.createdAt > maxAgeMs) {
+      this.pumpSnapshots.delete(key);
+      return null;
+    }
+
+    return snapshot;
+  }
+
+  _pumpSnapshotKey(userId, messageId) {
+    return `${userId}:${messageId}`;
+  }
+
+  _cleanupPumpSnapshots() {
+    const maxAgeMs = 10 * 60 * 1000;
+    const now = Date.now();
+
+    for (const [key, snapshot] of this.pumpSnapshots.entries()) {
+      if (now - snapshot.createdAt > maxAgeMs) {
+        this.pumpSnapshots.delete(key);
+      }
+    }
   }
 
   _candidateSnapshotKey(userId, messageId) {
@@ -957,6 +1113,9 @@ ${insights}`
 /candidate_auto status — статус авто-candidates
 /candidate_auto on / off — включить/выключить авто-candidates в runtime
 /candidateauto on / off — короткий alias
+/pump — PumpHunter Lab: памп-кандидаты
+/pump full — диагностика pump-кандидатов
+/pump paper — записать pump-входы в paper
 /signals 7 / 30 / all — paper-сигналы и TP/SL статистика
 /patterns — паттерны за 7 дней
 /patterns full 14 / 30 / all — детальная аналитика
@@ -1000,6 +1159,18 @@ ${insights}`
 
     if (data === 'candidates_stats') {
       return this._sendPaperSignalStats(userId, '7');
+    }
+
+    if (data === 'pump_refresh') {
+      return this._sendPumpHunter(userId, 'top');
+    }
+
+    if (data === 'pump_full') {
+      return this._sendPumpHunter(userId, 'full');
+    }
+
+    if (data === 'pump_paper') {
+      return this._writePumpSnapshotToPaper(userId, query.message.message_id);
     }
 
     if (data.startsWith('open_')) {
