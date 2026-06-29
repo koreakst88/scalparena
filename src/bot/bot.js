@@ -121,7 +121,7 @@ class ScalpArenaBot {
     this.bot.onText(/\/exit (.+)/, this._safe((msg, match) => this._onExit(msg, match)));
     this.bot.onText(/\/stats/, this._safe((msg) => this._onStats(msg)));
     this.bot.onText(/\/candidates/, this._safe((msg) => this._onCandidates(msg)));
-    this.bot.onText(/\/candidate_auto(?:\s+(\S+))?/, this._safe((msg, match) => this._onCandidateAuto(msg, match)));
+    this.bot.onText(/\/candidate_?auto(?:\s+(\S+))?/, this._safe((msg, match) => this._onCandidateAuto(msg, match)));
     this.bot.onText(/\/signals/, this._safe((msg) => this._onSignals(msg)));
     this.bot.onText(/\/signal_stats/, this._safe((msg) => this._onSignals(msg)));
     this.bot.onText(/\/patterns/, this._safe((msg) => this._onPatterns(msg)));
@@ -589,7 +589,7 @@ ${insights}
     }
 
     if (action !== 'status') {
-      return this._sendPlain(userId, 'Используй: /candidate_auto on, /candidate_auto off или /candidate_auto status');
+      return this._sendPlain(userId, 'Используй: /candidate_auto on, /candidate_auto off или /candidate_auto status. Также работает /candidateauto.');
     }
 
     return this._sendPlain(userId, this._formatCandidateAutoStatus(userId));
@@ -956,6 +956,7 @@ ${insights}`
 /candidates paper — записать топ-кандидатов в paper tracking
 /candidate_auto status — статус авто-candidates
 /candidate_auto on / off — включить/выключить авто-candidates в runtime
+/candidateauto on / off — короткий alias
 /signals 7 / 30 / all — paper-сигналы и TP/SL статистика
 /patterns — паттерны за 7 дней
 /patterns full 14 / 30 / all — детальная аналитика

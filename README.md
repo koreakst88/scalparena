@@ -57,6 +57,7 @@ Telegram команды:
 - `/candidate_auto status` - показать текущий режим и пороги
 - `/candidate_auto on` - включить авто-candidates для текущего runtime
 - `/candidate_auto off` - выключить авто-candidates для текущего runtime
+- `/candidateauto on/off/status` - короткий alias без underscore
 
 Антиспам-фильтры: отправляются только готовые входы, пары с активным paper-сигналом пропускаются, по каждой паре действует cooldown.
 
