@@ -1,5 +1,9 @@
 class PumpHunterFormatter {
   static formatTop(reports, actionable = []) {
+    if (!reports.length) {
+      return this._formatDataUnavailable();
+    }
+
     const lines = [
       '🚀 PUMP HUNTER LAB',
       '━━━━━━━━━━━━━━━━━━━━',
@@ -22,6 +26,10 @@ class PumpHunterFormatter {
   }
 
   static formatFull(reports) {
+    if (!reports.length) {
+      return this._formatDataUnavailable();
+    }
+
     const lines = [
       '🚀 PUMP HUNTER FULL',
       '━━━━━━━━━━━━━━━━━━━━',
@@ -85,6 +93,19 @@ class PumpHunterFormatter {
     if (value >= 1000000) return `${Math.round(value / 100000) / 10}M`;
     if (value >= 1000) return `${Math.round(value / 100) / 10}K`;
     return String(Math.round(value));
+  }
+
+  static _formatDataUnavailable() {
+    return [
+      '🚀 PUMP HUNTER LAB',
+      '━━━━━━━━━━━━━━━━━━━━',
+      'Данные Bybit не получены.',
+      '',
+      'Это не значит, что pump-входов нет. Сканер не получил список futures tickers.',
+      '',
+      'Проверь в Railway logs сообщения Bybit tickers request failed / retCode.',
+      'Также проверь переменную PUMP_HUNTER_USE_TESTNET=false.',
+    ].join('\n');
   }
 }
 

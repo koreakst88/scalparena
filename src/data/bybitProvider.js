@@ -315,9 +315,24 @@ class BybitDataProvider {
         timeout: 15000,
       });
 
-      return response.data?.result?.list || [];
+      if (response.data?.retCode !== 0) {
+        console.warn(
+          `⚠️ Bybit tickers returned retCode=${response.data?.retCode}: ${response.data?.retMsg || 'unknown'}`
+        );
+        return [];
+      }
+
+      const tickers = response.data?.result?.list || [];
+      if (!tickers.length) {
+        console.warn(`⚠️ Bybit tickers returned empty list from ${this.publicMarketRestBase}`);
+      }
+
+      return tickers;
     } catch (error) {
-      console.error('❌ Bybit tickers request failed:', error.message);
+      console.error(
+        `❌ Bybit tickers request failed via ${this.publicMarketRestBase}:`,
+        error.response?.status || error.message
+      );
       return [];
     }
   }
@@ -333,6 +348,13 @@ class BybitDataProvider {
         },
         timeout: 15000,
       });
+
+      if (response.data?.retCode !== 0) {
+        console.warn(
+          `⚠️ Bybit klines returned retCode=${response.data?.retCode} for ${pair}: ${response.data?.retMsg || 'unknown'}`
+        );
+        return [];
+      }
 
       return (response.data?.result?.list || [])
         .map((candle) => ({

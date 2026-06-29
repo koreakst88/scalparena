@@ -1,6 +1,7 @@
 // tests/unit/pumpHunterEngine.test.js
 
 const PumpHunterEngine = require('../../src/engine/pumpHunterEngine');
+const PumpHunterFormatter = require('../../src/analytics/pumpHunterFormatter');
 
 function buildCandles({ start = 1, end = 1.32, low = 1, high = 1.33, recentVolume = 7000, baseVolume = 1000 } = {}) {
   const candles = [];
@@ -55,6 +56,7 @@ const extended = PumpHunterEngine.analyzeSymbol('LATEUSDT', extendedTicker, buil
   baseVolume: 1000,
 }));
 const paperSignal = PumpHunterEngine.toPaperSignal(strong);
+const emptyMessage = PumpHunterFormatter.formatTop([], []);
 
 const checks = [
   { name: 'Fresh pump becomes TRADE', pass: strong.action === 'TRADE' && strong.score >= 70 },
@@ -63,6 +65,7 @@ const checks = [
   { name: 'Too extended pump is not actionable', pass: extended.action !== 'TRADE' },
   { name: 'Paper signal shape is PUMP_HUNTER', pass: paperSignal.strategy === 'PUMP_HUNTER' && paperSignal.type === 'LONG' },
   { name: 'Actionable filter keeps only strong pump', pass: PumpHunterEngine.getActionable([strong, weak, extended]).length === 1 },
+  { name: 'Empty scan shows data unavailable', pass: emptyMessage.includes('Данные Bybit не получены') && !emptyMessage.includes('Проверено: 0') },
 ];
 
 console.log('🎯 Final checks:');
