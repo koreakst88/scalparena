@@ -672,6 +672,7 @@ ${insights}
         `REST hosts: ${(this.provider.publicMarketRestBases || []).join(', ')}`,
         `Last host used: ${this.provider.lastPublicMarketHost || 'n/a'}`,
         `Proxy configured: ${this.provider.supabaseProxyUrl ? 'yes' : 'no'}`,
+        `Proxy auth configured: ${this.provider.supabaseProxyKey ? 'yes' : 'no'}`,
         `First symbols: ${first}`,
       ].join('\n')
     );

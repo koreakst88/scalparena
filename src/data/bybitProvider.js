@@ -43,6 +43,7 @@ class BybitDataProvider {
     this.publicMarketRestBases = this._getPublicMarketRestBases();
     this.lastPublicMarketHost = null;
     this.supabaseProxyUrl = process.env.SUPABASE_PROXY_URL;
+    this.supabaseProxyKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || '';
 
     this.ws = null;
     this.candleBuffer = {};
@@ -412,16 +413,38 @@ class BybitDataProvider {
     }
   }
 
-  _requestSupabaseProxy(path, params) {
-    return axios.get(this.supabaseProxyUrl, {
-      params: {
-        path,
-        params: new URLSearchParams(
-          Object.entries(params).map(([key, value]) => [key, String(value)])
-        ).toString(),
-      },
-      timeout: 20000,
-    });
+  async _requestSupabaseProxy(path, params) {
+    try {
+      const response = await axios.get(this.supabaseProxyUrl, {
+        params: {
+          path,
+          params: new URLSearchParams(
+            Object.entries(params).map(([key, value]) => [key, String(value)])
+          ).toString(),
+        },
+        headers: this._getSupabaseProxyHeaders(),
+        timeout: 20000,
+      });
+      this.lastPublicMarketHost = 'supabase-proxy';
+      return response;
+    } catch (error) {
+      const detail =
+        error.response?.data?.error ||
+        error.response?.data?.message ||
+        error.response?.status ||
+        error.message;
+      console.error('❌ Supabase proxy request failed:', detail);
+      throw error;
+    }
+  }
+
+  _getSupabaseProxyHeaders() {
+    if (!this.supabaseProxyKey) return {};
+
+    return {
+      apikey: this.supabaseProxyKey,
+      Authorization: `Bearer ${this.supabaseProxyKey}`,
+    };
   }
 
   _mapBybitKlines(rawCandles) {
