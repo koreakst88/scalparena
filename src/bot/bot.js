@@ -647,7 +647,34 @@ ${insights}
     const parts = this._getCommandParts(msg.text);
     const mode = parts[1] || 'top';
 
+    if (mode === 'debug') {
+      return this._sendPumpHunterDebug(userId);
+    }
+
     return this._sendPumpHunter(userId, mode);
+  }
+
+  async _sendPumpHunterDebug(userId) {
+    await this._sendPlain(userId, '🧪 PumpHunter debug: проверяю Bybit public REST...');
+
+    const tickers = await this.provider.getLinearTickers();
+    const universe = PumpHunterEngine.selectTickerUniverse(tickers, PUMP_HUNTER_SCAN_LIMIT);
+    const first = universe.slice(0, 5).map((ticker) => ticker.symbol).join(', ') || 'none';
+
+    return this._sendPlain(
+      userId,
+      [
+        '🧪 PumpHunter debug',
+        '━━━━━━━━━━━━━━━━━━━━',
+        `Tickers received: ${tickers.length}`,
+        `Universe after filters: ${universe.length}`,
+        `Scan limit: ${PUMP_HUNTER_SCAN_LIMIT}`,
+        `REST hosts: ${(this.provider.publicMarketRestBases || []).join(', ')}`,
+        `Last host used: ${this.provider.lastPublicMarketHost || 'n/a'}`,
+        `Proxy configured: ${this.provider.supabaseProxyUrl ? 'yes' : 'no'}`,
+        `First symbols: ${first}`,
+      ].join('\n')
+    );
   }
 
   async _sendPumpHunter(userId, mode = 'top') {
@@ -1151,6 +1178,7 @@ ${insights}`
 /pump — pump-кандидаты сейчас
 /pump full — диагностика pump-кандидатов
 /pump paper — записать pump-входы в paper
+/pump debug — проверить Bybit REST доступ
 
 📊 *Статистика*
 /signals 7 / 30 / all — paper-сигналы и TP/SL статистика

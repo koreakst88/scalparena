@@ -36,6 +36,10 @@ class PumpHunterEngine {
       .slice(0, limit);
   }
 
+  static selectTickerUniverse(tickers, limit = DEFAULT_SCAN_LIMIT) {
+    return this._selectTickerUniverse(tickers, limit);
+  }
+
   static analyzeSymbol(pair, ticker, candles) {
     if (!candles || candles.length < 30) {
       return this._buildNoTrade(pair, 0, 'недостаточно свечей');

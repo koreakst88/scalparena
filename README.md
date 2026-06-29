@@ -71,6 +71,7 @@ PUMP_HUNTER_KLINE_INTERVAL=15
 PUMP_HUNTER_KLINE_LIMIT=96
 PUMP_HUNTER_ACTIONABLE_LIMIT=3
 PUMP_HUNTER_USE_TESTNET=false
+PUMP_HUNTER_REST_BASES=api.bybit.com,api.bytick.com
 ```
 
 Telegram команды:
@@ -78,6 +79,7 @@ Telegram команды:
 - `/pump` - топ pump-кандидатов сейчас
 - `/pump full` - подробная диагностика
 - `/pump paper` - записать готовые pump-входы в paper tracking
+- `/pump debug` - проверить доступ к Bybit public REST
 
 Логика v1: ищем монеты, которые уже дали fresh move от локального low, но еще не выглядят слишком поздними. TP +20%, SL -15%, live Bybit orders OFF.
 

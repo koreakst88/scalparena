@@ -40,6 +40,8 @@ class BybitDataProvider {
     this.publicMarketRestBase = process.env.PUMP_HUNTER_USE_TESTNET === 'true'
       ? this.restBase
       : 'api.bybit.com';
+    this.publicMarketRestBases = this._getPublicMarketRestBases();
+    this.lastPublicMarketHost = null;
     this.supabaseProxyUrl = process.env.SUPABASE_PROXY_URL;
 
     this.ws = null;
@@ -371,21 +373,31 @@ class BybitDataProvider {
   }
 
   async _requestPublicMarket(path, params) {
-    try {
-      return await axios.get(`https://${this.publicMarketRestBase}${path}`, {
-        params,
-        timeout: 15000,
-      });
-    } catch (directError) {
-      if (!this.supabaseProxyUrl) throw directError;
+    let lastError = null;
 
-      console.warn(
-        `⚠️ Direct Bybit request failed via ${this.publicMarketRestBase}, retrying Supabase proxy:`,
-        directError.response?.status || directError.message
-      );
+    for (const host of this.publicMarketRestBases) {
+      try {
+        const response = await axios.get(`https://${host}${path}`, {
+          params,
+          timeout: 15000,
+        });
+        this.lastPublicMarketHost = host;
+        return response;
+      } catch (error) {
+        lastError = error;
+        console.warn(
+          `⚠️ Direct Bybit request failed via ${host}:`,
+          error.response?.status || error.message
+        );
+      }
+    }
 
+    if (this.supabaseProxyUrl) {
+      console.warn('⚠️ Direct Bybit hosts failed, retrying Supabase proxy');
       return this._requestSupabaseProxy(path, params);
     }
+
+    throw lastError;
   }
 
   async _retryPublicMarketViaProxy(path, params) {
@@ -425,6 +437,17 @@ class BybitDataProvider {
         confirm: true,
       }))
       .sort((a, b) => a.timestamp - b.timestamp);
+  }
+
+  _getPublicMarketRestBases() {
+    if (process.env.PUMP_HUNTER_USE_TESTNET === 'true') return [this.restBase];
+
+    const configured = String(process.env.PUMP_HUNTER_REST_BASES || '')
+      .split(',')
+      .map((host) => host.trim())
+      .filter(Boolean);
+
+    return configured.length ? configured : ['api.bybit.com', 'api.bytick.com'];
   }
 
   onCandleUpdate(callback) {
