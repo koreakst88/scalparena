@@ -40,6 +40,7 @@ class BybitDataProvider {
     this.publicMarketRestBase = process.env.PUMP_HUNTER_USE_TESTNET === 'true'
       ? this.restBase
       : 'api.bybit.com';
+    this.supabaseProxyUrl = process.env.SUPABASE_PROXY_URL;
 
     this.ws = null;
     this.candleBuffer = {};
@@ -310,21 +311,23 @@ class BybitDataProvider {
 
   async getLinearTickers() {
     try {
-      const response = await axios.get(`https://${this.publicMarketRestBase}/v5/market/tickers`, {
-        params: { category: 'linear' },
-        timeout: 15000,
+      const response = await this._requestPublicMarket('/v5/market/tickers', {
+        category: 'linear',
       });
 
       if (response.data?.retCode !== 0) {
         console.warn(
           `⚠️ Bybit tickers returned retCode=${response.data?.retCode}: ${response.data?.retMsg || 'unknown'}`
         );
-        return [];
+        const retry = await this._retryPublicMarketViaProxy('/v5/market/tickers', { category: 'linear' });
+        return retry?.data?.result?.list || [];
       }
 
       const tickers = response.data?.result?.list || [];
       if (!tickers.length) {
         console.warn(`⚠️ Bybit tickers returned empty list from ${this.publicMarketRestBase}`);
+        const retry = await this._retryPublicMarketViaProxy('/v5/market/tickers', { category: 'linear' });
+        return retry?.data?.result?.list || [];
       }
 
       return tickers;
@@ -339,39 +342,89 @@ class BybitDataProvider {
 
   async getRestKlines(pair, interval = '15', limit = 96) {
     try {
-      const response = await axios.get(`https://${this.publicMarketRestBase}/v5/market/kline`, {
-        params: {
-          category: 'linear',
-          symbol: pair,
-          interval,
-          limit,
-        },
-        timeout: 15000,
+      const response = await this._requestPublicMarket('/v5/market/kline', {
+        category: 'linear',
+        symbol: pair,
+        interval,
+        limit,
       });
 
       if (response.data?.retCode !== 0) {
         console.warn(
           `⚠️ Bybit klines returned retCode=${response.data?.retCode} for ${pair}: ${response.data?.retMsg || 'unknown'}`
         );
-        return [];
+        const retry = await this._retryPublicMarketViaProxy('/v5/market/kline', {
+          category: 'linear',
+          symbol: pair,
+          interval,
+          limit,
+        });
+        if (!retry) return [];
+        return this._mapBybitKlines(retry.data?.result?.list || []);
       }
 
-      return (response.data?.result?.list || [])
-        .map((candle) => ({
-          timestamp: Number(candle[0]),
-          open: Number(candle[1]),
-          high: Number(candle[2]),
-          low: Number(candle[3]),
-          close: Number(candle[4]),
-          volume: Number(candle[5]),
-          turnover: Number(candle[6]),
-          confirm: true,
-        }))
-        .sort((a, b) => a.timestamp - b.timestamp);
+      return this._mapBybitKlines(response.data?.result?.list || []);
     } catch (error) {
       console.error(`❌ Bybit klines request failed for ${pair}:`, error.message);
       return [];
     }
+  }
+
+  async _requestPublicMarket(path, params) {
+    try {
+      return await axios.get(`https://${this.publicMarketRestBase}${path}`, {
+        params,
+        timeout: 15000,
+      });
+    } catch (directError) {
+      if (!this.supabaseProxyUrl) throw directError;
+
+      console.warn(
+        `⚠️ Direct Bybit request failed via ${this.publicMarketRestBase}, retrying Supabase proxy:`,
+        directError.response?.status || directError.message
+      );
+
+      return this._requestSupabaseProxy(path, params);
+    }
+  }
+
+  async _retryPublicMarketViaProxy(path, params) {
+    if (!this.supabaseProxyUrl) return null;
+
+    try {
+      console.warn(`⚠️ Retrying Bybit public market via Supabase proxy: ${path}`);
+      return await this._requestSupabaseProxy(path, params);
+    } catch (error) {
+      console.error('❌ Supabase proxy retry failed:', error.response?.status || error.message);
+      return null;
+    }
+  }
+
+  _requestSupabaseProxy(path, params) {
+    return axios.get(this.supabaseProxyUrl, {
+      params: {
+        path,
+        params: new URLSearchParams(
+          Object.entries(params).map(([key, value]) => [key, String(value)])
+        ).toString(),
+      },
+      timeout: 20000,
+    });
+  }
+
+  _mapBybitKlines(rawCandles) {
+    return rawCandles
+      .map((candle) => ({
+        timestamp: Number(candle[0]),
+        open: Number(candle[1]),
+        high: Number(candle[2]),
+        low: Number(candle[3]),
+        close: Number(candle[4]),
+        volume: Number(candle[5]),
+        turnover: Number(candle[6]),
+        confirm: true,
+      }))
+      .sort((a, b) => a.timestamp - b.timestamp);
   }
 
   onCandleUpdate(callback) {
