@@ -39,6 +39,7 @@ const {
 
 const BOT_COMMANDS = [
   { command: 'start', description: 'Запуск и профиль трейдера' },
+  { command: 'menu', description: 'Короткое меню режимов' },
   { command: 'scan', description: 'Строгие Hybrid сигналы' },
   { command: 'candidates', description: 'Топ сценариев: full/paper' },
   { command: 'candidate_auto', description: 'Авто candidates: on/off/status' },
@@ -125,6 +126,7 @@ class ScalpArenaBot {
     if (this.commandsRegistered) return;
 
     this.bot.onText(/\/start/, this._safe((msg) => this._onStart(msg)));
+    this.bot.onText(/\/menu/, this._safe((msg) => this._onMenu(msg)));
     this.bot.onText(/\/scan/, this._safe((msg) => this._onScan(msg)));
     this.bot.onText(/\/status/, this._safe((msg) => this._onStatus(msg)));
     this.bot.onText(/\/rm (.+)/, this._safe((msg, match) => this._onRm(msg, match)));
@@ -204,6 +206,8 @@ class ScalpArenaBot {
 
 Готов торговать? Начни со скана:
 /scan
+
+Все режимы: /menu
       `
       );
     } else {
@@ -213,10 +217,42 @@ class ScalpArenaBot {
 👋 С возвращением, ${username}!
 
 💰 Баланс: *$${user.account_balance}*
-📊 Команды: /scan /status /stats /help
+📊 Команды: /menu /scan /candidates /pump /signals
       `
       );
     }
+  }
+
+  async _onMenu(msg) {
+    const userId = String(msg.chat.id);
+    await this._sendPlain(
+      userId,
+      `
+📋 SCALPARENA MENU
+━━━━━━━━━━━━━━━━━━━━
+
+🎯 Строгие сигналы:
+/scan — Hybrid MR / Trend сигналы
+
+🧠 Candidate Engine:
+/candidates — сценарии рынка сейчас
+/candidate_auto status — авто-кандидаты
+
+🚀 PumpHunter Lab:
+/pump — pump-кандидаты
+/pump full — детали
+/pump paper — записать pump-входы в paper
+
+📊 Статистика:
+/signals 7 — paper TP/SL статистика
+/stats 7 — сделки
+/patterns full 30 — паттерны
+
+⚙️ Управление:
+/status — открытые позиции
+/help — полная справка
+      `.trim()
+    );
   }
 
   async _onScan(msg) {
@@ -1100,26 +1136,35 @@ ${insights}`
 📚 *СПРАВКА SCALPARENA*
 ════════════════════════════════
 
+📋 /menu — короткое меню режимов
+
+🎯 *Строгие сигналы*
 /scan — найти Hybrid сигналы (MR + Momentum)
-/rm 10 — RM калькулятор
-/status — открытые позиции
-/exit 91.57 — закрыть позицию
-/stats — статистика дня
-/stats 7 / 30 / all — статистика за период
-/stats v2 / 30 v2 — только новая версия
 /candidates — топ торговых сценариев сейчас
 /candidates full — диагностика по всем парам
 /candidates paper — записать топ-кандидатов в paper tracking
 /candidate_auto status — статус авто-candidates
 /candidate_auto on / off — включить/выключить авто-candidates в runtime
 /candidateauto on / off — короткий alias
-/pump — PumpHunter Lab: памп-кандидаты
+
+🚀 *PumpHunter Lab*
+/pump — pump-кандидаты сейчас
 /pump full — диагностика pump-кандидатов
 /pump paper — записать pump-входы в paper
+
+📊 *Статистика*
 /signals 7 / 30 / all — paper-сигналы и TP/SL статистика
+/stats — статистика дня
+/stats 7 / 30 / all — статистика за период
+/stats v2 / 30 v2 — только новая версия
 /patterns — паттерны за 7 дней
 /patterns full 14 / 30 / all — детальная аналитика
 /patterns full 30 v2 — новая версия отдельно
+
+⚙️ *Сделки и баланс*
+/rm 10 — RM калькулятор
+/status — открытые позиции
+/exit 91.57 — закрыть позицию
 /deposit 300 — пополнить баланс
 /help — эта справка
 
