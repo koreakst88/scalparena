@@ -447,7 +447,9 @@ class BybitDataProvider {
       .map((host) => host.trim())
       .filter(Boolean);
 
-    return configured.length ? configured : ['api.bybit.com', 'api.bytick.com'];
+    return configured.length
+      ? configured
+      : ['api.bybit.com', 'api.bytick.com', 'api.bytick.nl', 'api.bybit-tr.com', 'api.bybit.kz'];
   }
 
   onCandleUpdate(callback) {

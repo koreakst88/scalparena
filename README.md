@@ -71,7 +71,7 @@ PUMP_HUNTER_KLINE_INTERVAL=15
 PUMP_HUNTER_KLINE_LIMIT=96
 PUMP_HUNTER_ACTIONABLE_LIMIT=3
 PUMP_HUNTER_USE_TESTNET=false
-PUMP_HUNTER_REST_BASES=api.bybit.com,api.bytick.com
+PUMP_HUNTER_REST_BASES=api.bybit.com,api.bytick.com,api.bytick.nl,api.bybit-tr.com,api.bybit.kz
 ```
 
 Telegram команды:
