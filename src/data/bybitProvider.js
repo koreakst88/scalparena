@@ -42,6 +42,8 @@ class BybitDataProvider {
       : 'api.bybit.com';
     this.publicMarketRestBases = this._getPublicMarketRestBases();
     this.lastPublicMarketHost = null;
+    this.lastPublicMarketError = null;
+    this.lastSupabaseProxyError = null;
     this.supabaseProxyUrl = process.env.SUPABASE_PROXY_URL;
     this.supabaseProxyKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || '';
 
@@ -313,6 +315,8 @@ class BybitDataProvider {
   }
 
   async getLinearTickers() {
+    this._resetPublicMarketDiagnostics();
+
     try {
       const response = await this._requestPublicMarket('/v5/market/tickers', {
         category: 'linear',
@@ -335,6 +339,7 @@ class BybitDataProvider {
 
       return tickers;
     } catch (error) {
+      this.lastPublicMarketError = this._formatAxiosError(error);
       console.error(
         `❌ Bybit tickers request failed via ${this.publicMarketRestBase}:`,
         error.response?.status || error.message
@@ -344,6 +349,8 @@ class BybitDataProvider {
   }
 
   async getRestKlines(pair, interval = '15', limit = 96) {
+    this._resetPublicMarketDiagnostics();
+
     try {
       const response = await this._requestPublicMarket('/v5/market/kline', {
         category: 'linear',
@@ -368,6 +375,7 @@ class BybitDataProvider {
 
       return this._mapBybitKlines(response.data?.result?.list || []);
     } catch (error) {
+      this.lastPublicMarketError = this._formatAxiosError(error);
       console.error(`❌ Bybit klines request failed for ${pair}:`, error.message);
       return [];
     }
@@ -386,6 +394,7 @@ class BybitDataProvider {
         return response;
       } catch (error) {
         lastError = error;
+        this.lastPublicMarketError = this._formatAxiosError(error);
         console.warn(
           `⚠️ Direct Bybit request failed via ${host}:`,
           error.response?.status || error.message
@@ -408,6 +417,7 @@ class BybitDataProvider {
       console.warn(`⚠️ Retrying Bybit public market via Supabase proxy: ${path}`);
       return await this._requestSupabaseProxy(path, params);
     } catch (error) {
+      this.lastSupabaseProxyError = this._formatAxiosError(error);
       console.error('❌ Supabase proxy retry failed:', error.response?.status || error.message);
       return null;
     }
@@ -428,6 +438,7 @@ class BybitDataProvider {
       this.lastPublicMarketHost = 'supabase-proxy';
       return response;
     } catch (error) {
+      this.lastSupabaseProxyError = this._formatAxiosError(error);
       const detail =
         error.response?.data?.error ||
         error.response?.data?.message ||
@@ -436,6 +447,21 @@ class BybitDataProvider {
       console.error('❌ Supabase proxy request failed:', detail);
       throw error;
     }
+  }
+
+  _resetPublicMarketDiagnostics() {
+    this.lastPublicMarketHost = null;
+    this.lastPublicMarketError = null;
+    this.lastSupabaseProxyError = null;
+  }
+
+  _formatAxiosError(error) {
+    const data = error.response?.data || {};
+    return {
+      status: error.response?.status || null,
+      message: data.error || data.message || error.message,
+      attempts: Array.isArray(data.attempts) ? data.attempts.slice(0, 3) : [],
+    };
   }
 
   _getSupabaseProxyHeaders() {

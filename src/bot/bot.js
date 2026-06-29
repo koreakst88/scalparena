@@ -660,6 +660,8 @@ ${insights}
     const tickers = await this.provider.getLinearTickers();
     const universe = PumpHunterEngine.selectTickerUniverse(tickers, PUMP_HUNTER_SCAN_LIMIT);
     const first = universe.slice(0, 5).map((ticker) => ticker.symbol).join(', ') || 'none';
+    const marketError = this._formatPublicMarketError(this.provider.lastPublicMarketError);
+    const proxyError = this._formatPublicMarketError(this.provider.lastSupabaseProxyError);
 
     return this._sendPlain(
       userId,
@@ -673,9 +675,22 @@ ${insights}
         `Last host used: ${this.provider.lastPublicMarketHost || 'n/a'}`,
         `Proxy configured: ${this.provider.supabaseProxyUrl ? 'yes' : 'no'}`,
         `Proxy auth configured: ${this.provider.supabaseProxyKey ? 'yes' : 'no'}`,
+        `Last REST error: ${marketError}`,
+        `Last proxy error: ${proxyError}`,
         `First symbols: ${first}`,
       ].join('\n')
     );
+  }
+
+  _formatPublicMarketError(error) {
+    if (!error) return 'none';
+
+    const head = [error.status, error.message].filter(Boolean).join(' ');
+    const attempts = (error.attempts || [])
+      .map((attempt) => `${attempt.base || 'unknown'}:${attempt.status || attempt.error || 'failed'}`)
+      .join(', ');
+
+    return attempts ? `${head}; attempts ${attempts}` : head;
   }
 
   async _sendPumpHunter(userId, mode = 'top') {
