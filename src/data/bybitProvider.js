@@ -28,6 +28,7 @@ const COINGECKO_OHLC_DAYS = '1';
 const COINGECKO_REQUEST_DELAY_MS = 2500;
 const COINGECKO_RETRY_DELAY_MS = 30000;
 const COINGECKO_MAX_RETRIES = 2;
+const BINANCE_FUTURES_BASE = 'https://fapi.binance.com';
 
 class BybitDataProvider {
   constructor() {
@@ -45,6 +46,7 @@ class BybitDataProvider {
     this.lastPublicMarketError = null;
     this.lastSupabaseProxyError = null;
     this.lastSupabaseProxyVersion = null;
+    this.lastBinanceMarketError = null;
     this.supabaseProxyUrl = process.env.SUPABASE_PROXY_URL;
     this.supabaseProxyKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || '';
 
@@ -382,6 +384,56 @@ class BybitDataProvider {
     }
   }
 
+  async getBinanceFuturesTickers() {
+    this.lastBinanceMarketError = null;
+
+    try {
+      const response = await axios.get(`${BINANCE_FUTURES_BASE}/fapi/v1/ticker/24hr`, {
+        timeout: 20000,
+      });
+
+      this.lastPublicMarketHost = 'binance-futures';
+      return (response.data || []).map((ticker) => ({
+        symbol: ticker.symbol,
+        price24hPcnt: String(Number.parseFloat(ticker.priceChangePercent || 0) / 100),
+        turnover24h: ticker.quoteVolume,
+        lastPrice: ticker.lastPrice,
+      }));
+    } catch (error) {
+      this.lastBinanceMarketError = this._formatAxiosError(error);
+      console.error('❌ Binance futures tickers request failed:', error.response?.status || error.message);
+      return [];
+    }
+  }
+
+  async getBinanceFuturesKlines(pair, interval = '15', limit = 96) {
+    try {
+      const response = await axios.get(`${BINANCE_FUTURES_BASE}/fapi/v1/klines`, {
+        params: {
+          symbol: pair,
+          interval: this._toBinanceInterval(interval),
+          limit,
+        },
+        timeout: 20000,
+      });
+
+      return (response.data || []).map((candle) => ({
+        timestamp: Number(candle[0]),
+        open: Number(candle[1]),
+        high: Number(candle[2]),
+        low: Number(candle[3]),
+        close: Number(candle[4]),
+        volume: Number(candle[5]),
+        turnover: Number(candle[7]),
+        confirm: true,
+      }));
+    } catch (error) {
+      this.lastBinanceMarketError = this._formatAxiosError(error);
+      console.error(`❌ Binance futures klines request failed for ${pair}:`, error.response?.status || error.message);
+      return [];
+    }
+  }
+
   async _requestPublicMarket(path, params) {
     let lastError = null;
 
@@ -441,6 +493,7 @@ class BybitDataProvider {
       this.lastPublicMarketHost = 'supabase-proxy';
       return response;
     } catch (error) {
+      this.lastSupabaseProxyVersion = error.response?.headers?.['x-scalparena-proxy-version'] || null;
       this.lastSupabaseProxyError = this._formatAxiosError(error);
       const detail =
         error.response?.data?.error ||
@@ -457,6 +510,7 @@ class BybitDataProvider {
     this.lastPublicMarketError = null;
     this.lastSupabaseProxyError = null;
     this.lastSupabaseProxyVersion = null;
+    this.lastBinanceMarketError = null;
   }
 
   _formatAxiosError(error) {
@@ -477,6 +531,27 @@ class BybitDataProvider {
       const preview = data.replace(/\s+/g, ' ').trim().slice(0, 220);
       throw new Error(`Supabase proxy returned invalid JSON: ${error.message}; preview=${preview}`);
     }
+  }
+
+  _toBinanceInterval(interval) {
+    const value = String(interval);
+    if (value.endsWith('m') || value.endsWith('h') || value.endsWith('d') || value.endsWith('w')) {
+      return value;
+    }
+
+    const map = {
+      1: '1m',
+      3: '3m',
+      5: '5m',
+      15: '15m',
+      30: '30m',
+      60: '1h',
+      120: '2h',
+      240: '4h',
+      D: '1d',
+    };
+
+    return map[value] || '15m';
   }
 
   _getSupabaseProxyHeaders() {

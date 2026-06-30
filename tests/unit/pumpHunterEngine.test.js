@@ -58,19 +58,33 @@ const extended = PumpHunterEngine.analyzeSymbol('LATEUSDT', extendedTicker, buil
 const paperSignal = PumpHunterEngine.toPaperSignal(strong);
 const emptyMessage = PumpHunterFormatter.formatTop([], []);
 
-const checks = [
-  { name: 'Fresh pump becomes TRADE', pass: strong.action === 'TRADE' && strong.score >= 70 },
-  { name: 'Pump signal uses +20/-15 levels', pass: strong.tpPercent === 20 && strong.slPercent === 15 },
-  { name: 'Weak move is not actionable', pass: weak.action !== 'TRADE' },
-  { name: 'Too extended pump is not actionable', pass: extended.action !== 'TRADE' },
-  { name: 'Paper signal shape is PUMP_HUNTER', pass: paperSignal.strategy === 'PUMP_HUNTER' && paperSignal.type === 'LONG' },
-  { name: 'Actionable filter keeps only strong pump', pass: PumpHunterEngine.getActionable([strong, weak, extended]).length === 1 },
-  { name: 'Empty scan shows data unavailable', pass: emptyMessage.includes('Данные Bybit не получены') && !emptyMessage.includes('Проверено: 0') },
-];
+const fallbackReportsPromise = PumpHunterEngine.scan({
+  getLinearTickers: async () => [],
+  getBinanceFuturesTickers: async () => [strongTicker],
+  getBinanceFuturesKlines: async () => buildCandles(),
+}, {
+  scanLimit: 3,
+  fallbackMarket: 'binance',
+});
 
-console.log('🎯 Final checks:');
-checks.forEach((check) => console.log(`   ${check.pass ? '✅' : '❌'} ${check.name}`));
+(async () => {
+  const fallbackReports = await fallbackReportsPromise;
 
-const allPassed = checks.every((check) => check.pass);
-console.log(`\n${allPassed ? '✅ ALL PASSED' : '❌ SOME FAILED'}\n`);
-process.exit(allPassed ? 0 : 1);
+  const checks = [
+    { name: 'Fresh pump becomes TRADE', pass: strong.action === 'TRADE' && strong.score >= 70 },
+    { name: 'Pump signal uses +20/-15 levels', pass: strong.tpPercent === 20 && strong.slPercent === 15 },
+    { name: 'Weak move is not actionable', pass: weak.action !== 'TRADE' },
+    { name: 'Too extended pump is not actionable', pass: extended.action !== 'TRADE' },
+    { name: 'Paper signal shape is PUMP_HUNTER', pass: paperSignal.strategy === 'PUMP_HUNTER' && paperSignal.type === 'LONG' },
+    { name: 'Actionable filter keeps only strong pump', pass: PumpHunterEngine.getActionable([strong, weak, extended]).length === 1 },
+    { name: 'Empty scan shows data unavailable', pass: emptyMessage.includes('Данные Bybit не получены') && !emptyMessage.includes('Проверено: 0') },
+    { name: 'Binance fallback is used when Bybit tickers are unavailable', pass: fallbackReports[0]?.marketSource === 'BINANCE_FUTURES_FALLBACK' },
+  ];
+
+  console.log('🎯 Final checks:');
+  checks.forEach((check) => console.log(`   ${check.pass ? '✅' : '❌'} ${check.name}`));
+
+  const allPassed = checks.every((check) => check.pass);
+  console.log(`\n${allPassed ? '✅ ALL PASSED' : '❌ SOME FAILED'}\n`);
+  process.exit(allPassed ? 0 : 1);
+})();

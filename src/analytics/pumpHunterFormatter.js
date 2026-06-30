@@ -7,6 +7,7 @@ class PumpHunterFormatter {
     const lines = [
       '🚀 PUMP HUNTER LAB',
       '━━━━━━━━━━━━━━━━━━━━',
+      `Источник данных: ${this._formatMarketSource(reports)}`,
       `Проверено: ${reports.length} монет`,
       `Готовых pump-входов: ${actionable.length}`,
       '',
@@ -33,6 +34,7 @@ class PumpHunterFormatter {
     const lines = [
       '🚀 PUMP HUNTER FULL',
       '━━━━━━━━━━━━━━━━━━━━',
+      `Источник данных: ${this._formatMarketSource(reports)}`,
       '',
     ];
 
@@ -93,6 +95,12 @@ class PumpHunterFormatter {
     if (value >= 1000000) return `${Math.round(value / 100000) / 10}M`;
     if (value >= 1000) return `${Math.round(value / 100) / 10}K`;
     return String(Math.round(value));
+  }
+
+  static _formatMarketSource(reports) {
+    const source = reports.find((report) => report?.marketSource)?.marketSource || 'BYBIT';
+    if (source === 'BINANCE_FUTURES_FALLBACK') return 'Binance futures fallback';
+    return 'Bybit futures';
   }
 
   static _formatDataUnavailable() {

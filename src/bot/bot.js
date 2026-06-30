@@ -25,6 +25,7 @@ const {
   PUMP_HUNTER_KLINE_INTERVAL,
   PUMP_HUNTER_KLINE_LIMIT,
   PUMP_HUNTER_ACTIONABLE_LIMIT,
+  PUMP_HUNTER_FALLBACK_MARKET,
 } = require('../config/pumpHunter');
 const {
   PAPER_SIGNAL_TRACKING_ENABLED,
@@ -657,18 +658,27 @@ ${insights}
   async _sendPumpHunterDebug(userId) {
     await this._sendPlain(userId, '🧪 PumpHunter debug: проверяю Bybit public REST...');
 
-    const tickers = await this.provider.getLinearTickers();
-    const universe = PumpHunterEngine.selectTickerUniverse(tickers, PUMP_HUNTER_SCAN_LIMIT);
-    const first = universe.slice(0, 5).map((ticker) => ticker.symbol).join(', ') || 'none';
+    const bybitTickers = await this.provider.getLinearTickers();
     const marketError = this._formatPublicMarketError(this.provider.lastPublicMarketError);
     const proxyError = this._formatPublicMarketError(this.provider.lastSupabaseProxyError);
+    const fallbackEnabled = String(PUMP_HUNTER_FALLBACK_MARKET).toLowerCase() === 'binance';
+    const fallbackTickers = !bybitTickers.length && fallbackEnabled
+      ? await this.provider.getBinanceFuturesTickers()
+      : [];
+    const tickers = bybitTickers.length ? bybitTickers : fallbackTickers;
+    const universe = PumpHunterEngine.selectTickerUniverse(tickers, PUMP_HUNTER_SCAN_LIMIT);
+    const first = universe.slice(0, 5).map((ticker) => ticker.symbol).join(', ') || 'none';
+    const binanceError = this._formatPublicMarketError(this.provider.lastBinanceMarketError);
 
     return this._sendPlain(
       userId,
       [
         '🧪 PumpHunter debug',
         '━━━━━━━━━━━━━━━━━━━━',
-        `Tickers received: ${tickers.length}`,
+        `Bybit tickers received: ${bybitTickers.length}`,
+        `Fallback market: ${fallbackEnabled ? 'binance' : 'off'}`,
+        `Fallback tickers received: ${fallbackTickers.length}`,
+        `Tickers used: ${tickers.length}`,
         `Universe after filters: ${universe.length}`,
         `Scan limit: ${PUMP_HUNTER_SCAN_LIMIT}`,
         `REST hosts: ${(this.provider.publicMarketRestBases || []).join(', ')}`,
@@ -678,6 +688,7 @@ ${insights}
         `Proxy version: ${this.provider.lastSupabaseProxyVersion || 'n/a'}`,
         `Last REST error: ${marketError}`,
         `Last proxy error: ${proxyError}`,
+        `Last fallback error: ${binanceError}`,
         `First symbols: ${first}`,
       ].join('\n')
     );
@@ -704,6 +715,7 @@ ${insights}
       scanLimit: PUMP_HUNTER_SCAN_LIMIT,
       interval: PUMP_HUNTER_KLINE_INTERVAL,
       klineLimit: PUMP_HUNTER_KLINE_LIMIT,
+      fallbackMarket: PUMP_HUNTER_FALLBACK_MARKET,
     });
     const actionable = PumpHunterEngine.getActionable(reports, PUMP_HUNTER_ACTIONABLE_LIMIT);
     const keyboard = this._getPumpHunterKeyboard(actionable.length);

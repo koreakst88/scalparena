@@ -9,17 +9,33 @@ const MIN_TURNOVER_24H = 300000;
 
 class PumpHunterEngine {
   static async scan(provider, options = {}) {
-    const tickers = await provider.getLinearTickers();
+    let marketSource = 'BYBIT';
+    let tickers = await provider.getLinearTickers();
+
+    if (!tickers.length && this._shouldUseBinanceFallback(options) && provider.getBinanceFuturesTickers) {
+      tickers = await provider.getBinanceFuturesTickers();
+      marketSource = 'BINANCE_FUTURES_FALLBACK';
+    }
+
     const symbols = this._selectTickerUniverse(tickers, options.scanLimit || DEFAULT_SCAN_LIMIT);
     const reports = [];
 
     for (const ticker of symbols) {
-      const candles = await provider.getRestKlines(
-        ticker.symbol,
-        options.interval || DEFAULT_KLINE_INTERVAL,
-        options.klineLimit || DEFAULT_KLINE_LIMIT
-      );
-      reports.push(this.analyzeSymbol(ticker.symbol, ticker, candles));
+      const candles = marketSource === 'BINANCE_FUTURES_FALLBACK' && provider.getBinanceFuturesKlines
+        ? await provider.getBinanceFuturesKlines(
+          ticker.symbol,
+          options.interval || DEFAULT_KLINE_INTERVAL,
+          options.klineLimit || DEFAULT_KLINE_LIMIT
+        )
+        : await provider.getRestKlines(
+          ticker.symbol,
+          options.interval || DEFAULT_KLINE_INTERVAL,
+          options.klineLimit || DEFAULT_KLINE_LIMIT
+        );
+      reports.push({
+        ...this.analyzeSymbol(ticker.symbol, ticker, candles),
+        marketSource,
+      });
     }
 
     return this.sortReports(reports);
@@ -139,6 +155,10 @@ class PumpHunterEngine {
       .filter((ticker) => Number.parseFloat(ticker.turnover24h || 0) >= MIN_TURNOVER_24H)
       .sort((a, b) => Number.parseFloat(b.price24hPcnt || 0) - Number.parseFloat(a.price24hPcnt || 0))
       .slice(0, limit);
+  }
+
+  static _shouldUseBinanceFallback(options) {
+    return String(options.fallbackMarket || 'binance').toLowerCase() === 'binance';
   }
 
   static _calculateVolumeBoost(candles) {
