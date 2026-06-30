@@ -29,6 +29,7 @@ const COINGECKO_REQUEST_DELAY_MS = 2500;
 const COINGECKO_RETRY_DELAY_MS = 30000;
 const COINGECKO_MAX_RETRIES = 2;
 const BINANCE_FUTURES_BASE = 'https://fapi.binance.com';
+const OKX_PUBLIC_BASE = 'https://www.okx.com';
 
 class BybitDataProvider {
   constructor() {
@@ -47,6 +48,7 @@ class BybitDataProvider {
     this.lastSupabaseProxyError = null;
     this.lastSupabaseProxyVersion = null;
     this.lastBinanceMarketError = null;
+    this.lastOkxMarketError = null;
     this.supabaseProxyUrl = process.env.SUPABASE_PROXY_URL;
     this.supabaseProxyKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || '';
 
@@ -434,6 +436,76 @@ class BybitDataProvider {
     }
   }
 
+  async getOkxSwapTickers() {
+    this.lastOkxMarketError = null;
+
+    try {
+      const response = await axios.get(`${OKX_PUBLIC_BASE}/api/v5/market/tickers`, {
+        params: { instType: 'SWAP' },
+        timeout: 20000,
+      });
+
+      if (response.data?.code !== '0') {
+        throw new Error(`OKX retCode ${response.data?.code}: ${response.data?.msg || 'unknown'}`);
+      }
+
+      this.lastPublicMarketHost = 'okx-swap';
+      return (response.data?.data || [])
+        .filter((ticker) => String(ticker.instId || '').endsWith('-USDT-SWAP'))
+        .map((ticker) => {
+          const last = Number.parseFloat(ticker.last || 0);
+          const open24h = Number.parseFloat(ticker.open24h || 0);
+          const volumeCurrency24h = Number.parseFloat(ticker.volCcy24h || ticker.vol24h || 0);
+
+          return {
+            symbol: this._okxInstIdToSymbol(ticker.instId),
+            okxInstId: ticker.instId,
+            price24hPcnt: open24h > 0 ? String((last - open24h) / open24h) : '0',
+            turnover24h: String(volumeCurrency24h * last),
+            lastPrice: ticker.last,
+          };
+        });
+    } catch (error) {
+      this.lastOkxMarketError = this._formatAxiosError(error);
+      console.error('❌ OKX swap tickers request failed:', error.response?.status || error.message);
+      return [];
+    }
+  }
+
+  async getOkxSwapKlines(pair, interval = '15', limit = 96) {
+    try {
+      const response = await axios.get(`${OKX_PUBLIC_BASE}/api/v5/market/candles`, {
+        params: {
+          instId: this._symbolToOkxInstId(pair),
+          bar: this._toOkxBar(interval),
+          limit,
+        },
+        timeout: 20000,
+      });
+
+      if (response.data?.code !== '0') {
+        throw new Error(`OKX retCode ${response.data?.code}: ${response.data?.msg || 'unknown'}`);
+      }
+
+      return (response.data?.data || [])
+        .map((candle) => ({
+          timestamp: Number(candle[0]),
+          open: Number(candle[1]),
+          high: Number(candle[2]),
+          low: Number(candle[3]),
+          close: Number(candle[4]),
+          volume: Number(candle[5]),
+          turnover: Number(candle[7] || candle[6] || 0),
+          confirm: candle[8] === '1',
+        }))
+        .sort((a, b) => a.timestamp - b.timestamp);
+    } catch (error) {
+      this.lastOkxMarketError = this._formatAxiosError(error);
+      console.error(`❌ OKX swap klines request failed for ${pair}:`, error.response?.status || error.message);
+      return [];
+    }
+  }
+
   async _requestPublicMarket(path, params) {
     let lastError = null;
 
@@ -511,6 +583,7 @@ class BybitDataProvider {
     this.lastSupabaseProxyError = null;
     this.lastSupabaseProxyVersion = null;
     this.lastBinanceMarketError = null;
+    this.lastOkxMarketError = null;
   }
 
   _formatAxiosError(error) {
@@ -552,6 +625,36 @@ class BybitDataProvider {
     };
 
     return map[value] || '15m';
+  }
+
+  _toOkxBar(interval) {
+    const value = String(interval);
+    if (value.endsWith('m') || value.endsWith('H') || value.endsWith('D') || value.endsWith('W')) {
+      return value;
+    }
+
+    const map = {
+      1: '1m',
+      3: '3m',
+      5: '5m',
+      15: '15m',
+      30: '30m',
+      60: '1H',
+      120: '2H',
+      240: '4H',
+      D: '1D',
+    };
+
+    return map[value] || '15m';
+  }
+
+  _okxInstIdToSymbol(instId) {
+    return String(instId || '').replace('-USDT-SWAP', 'USDT').replace(/-/g, '');
+  }
+
+  _symbolToOkxInstId(symbol) {
+    const base = String(symbol || '').replace(/USDT$/, '');
+    return `${base}-USDT-SWAP`;
   }
 
   _getSupabaseProxyHeaders() {

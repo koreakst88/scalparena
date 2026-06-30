@@ -66,9 +66,19 @@ const fallbackReportsPromise = PumpHunterEngine.scan({
   scanLimit: 3,
   fallbackMarket: 'binance',
 });
+const okxFallbackReportsPromise = PumpHunterEngine.scan({
+  getLinearTickers: async () => [],
+  getBinanceFuturesTickers: async () => [],
+  getOkxSwapTickers: async () => [strongTicker],
+  getOkxSwapKlines: async () => buildCandles(),
+}, {
+  scanLimit: 3,
+  fallbackMarket: 'binance,okx',
+});
 
 (async () => {
   const fallbackReports = await fallbackReportsPromise;
+  const okxFallbackReports = await okxFallbackReportsPromise;
 
   const checks = [
     { name: 'Fresh pump becomes TRADE', pass: strong.action === 'TRADE' && strong.score >= 70 },
@@ -79,6 +89,7 @@ const fallbackReportsPromise = PumpHunterEngine.scan({
     { name: 'Actionable filter keeps only strong pump', pass: PumpHunterEngine.getActionable([strong, weak, extended]).length === 1 },
     { name: 'Empty scan shows data unavailable', pass: emptyMessage.includes('Данные Bybit не получены') && !emptyMessage.includes('Проверено: 0') },
     { name: 'Binance fallback is used when Bybit tickers are unavailable', pass: fallbackReports[0]?.marketSource === 'BINANCE_FUTURES_FALLBACK' },
+    { name: 'OKX fallback is used when Bybit and Binance are unavailable', pass: okxFallbackReports[0]?.marketSource === 'OKX_SWAP_FALLBACK' },
   ];
 
   console.log('🎯 Final checks:');

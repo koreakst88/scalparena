@@ -100,6 +100,7 @@ class PumpHunterFormatter {
   static _formatMarketSource(reports) {
     const source = reports.find((report) => report?.marketSource)?.marketSource || 'BYBIT';
     if (source === 'BINANCE_FUTURES_FALLBACK') return 'Binance futures fallback';
+    if (source === 'OKX_SWAP_FALLBACK') return 'OKX swap fallback';
     return 'Bybit futures';
   }
 

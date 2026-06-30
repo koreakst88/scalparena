@@ -12,26 +12,17 @@ class PumpHunterEngine {
     let marketSource = 'BYBIT';
     let tickers = await provider.getLinearTickers();
 
-    if (!tickers.length && this._shouldUseBinanceFallback(options) && provider.getBinanceFuturesTickers) {
-      tickers = await provider.getBinanceFuturesTickers();
-      marketSource = 'BINANCE_FUTURES_FALLBACK';
+    if (!tickers.length) {
+      const fallback = await this._loadFallbackTickers(provider, options);
+      tickers = fallback.tickers;
+      marketSource = fallback.marketSource;
     }
 
     const symbols = this._selectTickerUniverse(tickers, options.scanLimit || DEFAULT_SCAN_LIMIT);
     const reports = [];
 
     for (const ticker of symbols) {
-      const candles = marketSource === 'BINANCE_FUTURES_FALLBACK' && provider.getBinanceFuturesKlines
-        ? await provider.getBinanceFuturesKlines(
-          ticker.symbol,
-          options.interval || DEFAULT_KLINE_INTERVAL,
-          options.klineLimit || DEFAULT_KLINE_LIMIT
-        )
-        : await provider.getRestKlines(
-          ticker.symbol,
-          options.interval || DEFAULT_KLINE_INTERVAL,
-          options.klineLimit || DEFAULT_KLINE_LIMIT
-        );
+      const candles = await this._loadCandles(provider, marketSource, ticker.symbol, options);
       reports.push({
         ...this.analyzeSymbol(ticker.symbol, ticker, candles),
         marketSource,
@@ -158,7 +149,51 @@ class PumpHunterEngine {
   }
 
   static _shouldUseBinanceFallback(options) {
-    return String(options.fallbackMarket || 'binance').toLowerCase() === 'binance';
+    return this._getFallbackMarkets(options).includes('binance');
+  }
+
+  static _shouldUseOkxFallback(options) {
+    return this._getFallbackMarkets(options).includes('okx');
+  }
+
+  static _getFallbackMarkets(options) {
+    return String(options.fallbackMarket || 'binance,okx')
+      .split(',')
+      .map((market) => market.trim().toLowerCase())
+      .filter((market) => market && market !== 'none' && market !== 'off');
+  }
+
+  static async _loadFallbackTickers(provider, options) {
+    if (this._shouldUseBinanceFallback(options) && provider.getBinanceFuturesTickers) {
+      const tickers = await provider.getBinanceFuturesTickers();
+      if (tickers.length) {
+        return { marketSource: 'BINANCE_FUTURES_FALLBACK', tickers };
+      }
+    }
+
+    if (this._shouldUseOkxFallback(options) && provider.getOkxSwapTickers) {
+      const tickers = await provider.getOkxSwapTickers();
+      if (tickers.length) {
+        return { marketSource: 'OKX_SWAP_FALLBACK', tickers };
+      }
+    }
+
+    return { marketSource: 'BYBIT', tickers: [] };
+  }
+
+  static async _loadCandles(provider, marketSource, symbol, options) {
+    const interval = options.interval || DEFAULT_KLINE_INTERVAL;
+    const limit = options.klineLimit || DEFAULT_KLINE_LIMIT;
+
+    if (marketSource === 'BINANCE_FUTURES_FALLBACK' && provider.getBinanceFuturesKlines) {
+      return provider.getBinanceFuturesKlines(symbol, interval, limit);
+    }
+
+    if (marketSource === 'OKX_SWAP_FALLBACK' && provider.getOkxSwapKlines) {
+      return provider.getOkxSwapKlines(symbol, interval, limit);
+    }
+
+    return provider.getRestKlines(symbol, interval, limit);
   }
 
   static _calculateVolumeBoost(candles) {

@@ -661,14 +661,25 @@ ${insights}
     const bybitTickers = await this.provider.getLinearTickers();
     const marketError = this._formatPublicMarketError(this.provider.lastPublicMarketError);
     const proxyError = this._formatPublicMarketError(this.provider.lastSupabaseProxyError);
-    const fallbackEnabled = String(PUMP_HUNTER_FALLBACK_MARKET).toLowerCase() === 'binance';
-    const fallbackTickers = !bybitTickers.length && fallbackEnabled
-      ? await this.provider.getBinanceFuturesTickers()
-      : [];
+    const fallbackMarkets = this._parseFallbackMarkets(PUMP_HUNTER_FALLBACK_MARKET);
+    let fallbackSource = 'none';
+    let fallbackTickers = [];
+
+    if (!bybitTickers.length && fallbackMarkets.includes('binance')) {
+      fallbackTickers = await this.provider.getBinanceFuturesTickers();
+      fallbackSource = fallbackTickers.length ? 'binance' : 'none';
+    }
+
+    if (!bybitTickers.length && !fallbackTickers.length && fallbackMarkets.includes('okx')) {
+      fallbackTickers = await this.provider.getOkxSwapTickers();
+      fallbackSource = fallbackTickers.length ? 'okx' : 'none';
+    }
+
     const tickers = bybitTickers.length ? bybitTickers : fallbackTickers;
     const universe = PumpHunterEngine.selectTickerUniverse(tickers, PUMP_HUNTER_SCAN_LIMIT);
     const first = universe.slice(0, 5).map((ticker) => ticker.symbol).join(', ') || 'none';
     const binanceError = this._formatPublicMarketError(this.provider.lastBinanceMarketError);
+    const okxError = this._formatPublicMarketError(this.provider.lastOkxMarketError);
 
     return this._sendPlain(
       userId,
@@ -676,7 +687,8 @@ ${insights}
         '🧪 PumpHunter debug',
         '━━━━━━━━━━━━━━━━━━━━',
         `Bybit tickers received: ${bybitTickers.length}`,
-        `Fallback market: ${fallbackEnabled ? 'binance' : 'off'}`,
+        `Fallback market: ${fallbackMarkets.length ? fallbackMarkets.join(',') : 'off'}`,
+        `Fallback source used: ${fallbackSource}`,
         `Fallback tickers received: ${fallbackTickers.length}`,
         `Tickers used: ${tickers.length}`,
         `Universe after filters: ${universe.length}`,
@@ -688,10 +700,18 @@ ${insights}
         `Proxy version: ${this.provider.lastSupabaseProxyVersion || 'n/a'}`,
         `Last REST error: ${marketError}`,
         `Last proxy error: ${proxyError}`,
-        `Last fallback error: ${binanceError}`,
+        `Last Binance error: ${binanceError}`,
+        `Last OKX error: ${okxError}`,
         `First symbols: ${first}`,
       ].join('\n')
     );
+  }
+
+  _parseFallbackMarkets(value) {
+    return String(value || '')
+      .split(',')
+      .map((market) => market.trim().toLowerCase())
+      .filter((market) => market && market !== 'none' && market !== 'off');
   }
 
   _formatPublicMarketError(error) {
