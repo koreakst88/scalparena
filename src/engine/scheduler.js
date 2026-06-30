@@ -2,6 +2,7 @@
 
 const SignalDetector = require('./signalDetector');
 const CandidateEngine = require('./candidateEngine');
+const PumpHunterEngine = require('./pumpHunterEngine');
 const RiskManager = require('./riskManager');
 const {
   PAPER_SIGNAL_TRACKING_ENABLED,
@@ -13,6 +14,17 @@ const {
   CANDIDATE_AUTO_COOLDOWN_MINUTES,
   CANDIDATE_AUTO_MAX_ALERTS,
 } = require('../config/paperSignals');
+const {
+  PUMP_HUNTER_SCAN_LIMIT,
+  PUMP_HUNTER_KLINE_INTERVAL,
+  PUMP_HUNTER_KLINE_LIMIT,
+  PUMP_HUNTER_ACTIONABLE_LIMIT,
+  PUMP_HUNTER_FALLBACK_MARKET,
+  PUMP_AUTO_SCAN_INTERVAL_MS,
+  PUMP_AUTO_MIN_SCORE,
+  PUMP_AUTO_COOLDOWN_MINUTES,
+  PUMP_AUTO_MAX_ALERTS,
+} = require('../config/pumpHunter');
 
 const SCAN_INTERVAL_MS = 15 * 60 * 1000;
 const SEOUL_TIMEZONE = process.env.TIMEZONE || 'Asia/Seoul';
@@ -24,10 +36,13 @@ class Scheduler {
     this.provider = provider;
     this.scanTimer = null;
     this.candidateScanTimer = null;
+    this.pumpScanTimer = null;
     this.resetTimer = null;
     this.lastScanTime = null;
     this.lastCandidateScanTime = null;
+    this.lastPumpScanTime = null;
     this.candidateAlertCooldowns = new Map();
+    this.pumpAlertCooldowns = new Map();
   }
 
   start() {
@@ -40,15 +55,24 @@ class Scheduler {
       () => this._candidateAutoScan(),
       CANDIDATE_AUTO_SCAN_INTERVAL_MS
     );
+    this.pumpScanTimer = setInterval(
+      () => this._pumpAutoScan(),
+      PUMP_AUTO_SCAN_INTERVAL_MS
+    );
     this._scheduleDailyReset();
 
     setTimeout(() => this._autoScan(), 5 * 60 * 1000);
     setTimeout(() => this._candidateAutoScan(), 6 * 60 * 1000);
+    setTimeout(() => this._pumpAutoScan(), 7 * 60 * 1000);
 
     console.log('✅ Auto-scan every 15 min | Daily reset at 08:00 Seoul');
     console.log(
       `🧠 Candidate auto-scan every ${Math.round(CANDIDATE_AUTO_SCAN_INTERVAL_MS / 60000)} min ` +
       `| score>=${CANDIDATE_AUTO_MIN_SCORE} RR>=${CANDIDATE_AUTO_MIN_RR}`
+    );
+    console.log(
+      `🚀 Pump auto-scan every ${Math.round(PUMP_AUTO_SCAN_INTERVAL_MS / 60000)} min ` +
+      `| score>=${PUMP_AUTO_MIN_SCORE} max=${PUMP_AUTO_MAX_ALERTS}`
     );
     console.log('⏳ First auto-scan in 5 minutes (WS data accumulation)');
   }
@@ -61,6 +85,10 @@ class Scheduler {
     if (this.candidateScanTimer) {
       clearInterval(this.candidateScanTimer);
       this.candidateScanTimer = null;
+    }
+    if (this.pumpScanTimer) {
+      clearInterval(this.pumpScanTimer);
+      this.pumpScanTimer = null;
     }
     if (this.resetTimer) {
       clearTimeout(this.resetTimer);
@@ -139,11 +167,145 @@ class Scheduler {
     }
   }
 
+  async _pumpAutoScan() {
+    console.log('🚀 PumpHunter auto-scan triggered...');
+    this.lastPumpScanTime = new Date();
+
+    try {
+      const { data: users, error } = await this.db.client
+        .from('users')
+        .select('*')
+        .eq('auto_scan_enabled', true);
+
+      if (error || !users?.length) return;
+
+      const enabledUsers = users.filter((user) => (
+        typeof this.bot._isPumpAutoEnabled === 'function' &&
+        this.bot._isPumpAutoEnabled(user.telegram_id)
+      ));
+
+      if (!enabledUsers.length) {
+        console.log('🚀 PumpHunter auto-scan: disabled for all users');
+        return;
+      }
+
+      const reports = await PumpHunterEngine.scan(this.provider, {
+        scanLimit: PUMP_HUNTER_SCAN_LIMIT,
+        interval: PUMP_HUNTER_KLINE_INTERVAL,
+        klineLimit: PUMP_HUNTER_KLINE_LIMIT,
+        fallbackMarket: PUMP_HUNTER_FALLBACK_MARKET,
+      });
+      const candidates = this._getStrictPumpAlerts(reports);
+
+      if (!candidates.length) {
+        console.log('🚀 PumpHunter auto-scan: no strict pump entries');
+        return;
+      }
+
+      console.log(`🚀 PumpHunter auto-scan: ${candidates.length} strict pump entry candidate(s) found`);
+
+      for (const user of enabledUsers) {
+        await this._sendPumpAlertsToUser(user, candidates);
+      }
+    } catch (error) {
+      console.error('❌ PumpHunter auto-scan error:', error.message);
+    }
+  }
+
   _getStrictCandidateAlerts(reports) {
     return CandidateEngine.getActionableCandidates(reports, 15)
       .filter((candidate) => candidate.score >= CANDIDATE_AUTO_MIN_SCORE)
       .filter((candidate) => candidate.riskReward >= CANDIDATE_AUTO_MIN_RR)
       .slice(0, CANDIDATE_AUTO_MAX_ALERTS);
+  }
+
+  _getStrictPumpAlerts(reports) {
+    return PumpHunterEngine.getActionable(reports, PUMP_HUNTER_ACTIONABLE_LIMIT)
+      .filter((candidate) => candidate.score >= PUMP_AUTO_MIN_SCORE)
+      .slice(0, PUMP_AUTO_MAX_ALERTS);
+  }
+
+  async _sendPumpAlertsToUser(user, candidates) {
+    const userId = String(user.telegram_id);
+    const activeSignals = PAPER_SIGNAL_TRACKING_ENABLED
+      ? await this.db.getActivePaperSignals(userId)
+      : [];
+    const activePairs = new Set(
+      activeSignals.map((signal) => this._normalizePair(signal.pair))
+    );
+
+    const alertable = candidates.filter((candidate) => {
+      const pair = this._normalizePair(candidate.pair);
+
+      if (activePairs.has(pair)) {
+        console.log(`🧪 Pump ${pair} skipped for ${userId}: active paper signal exists`);
+        return false;
+      }
+
+      if (this._isPumpPairInCooldown(userId, pair)) {
+        console.log(`⏸️ Pump ${pair} skipped for ${userId}: alert cooldown`);
+        return false;
+      }
+
+      return true;
+    }).slice(0, PUMP_AUTO_MAX_ALERTS);
+
+    if (!alertable.length) return;
+
+    const source = alertable[0]?.marketSource || 'BYBIT';
+    const paperModeText = PAPER_SIGNAL_TRACKING_ENABLED
+      ? 'Сигналы записываю в paper.'
+      : 'Paper tracking OFF: пришлю алерт, но статистика не запишется.';
+
+    await this.bot._sendPlain(
+      userId,
+      `🚀 PumpHunter auto: найдено ${alertable.length} pump-вход(ов).\n` +
+      `Источник данных: ${this._formatPumpSource(source)}.\n` +
+      `Live Bybit orders: OFF. ${paperModeText}`
+    );
+
+    for (const candidate of alertable) {
+      const paperSignal = await this.bot._trackPaperSignal(
+        userId,
+        PumpHunterEngine.toPaperSignal(candidate),
+        'PUMP_AUTO'
+      );
+      this._markPumpPairAlerted(userId, candidate.pair);
+
+      await this.bot._sendPlain(
+        userId,
+        this._formatPumpAutoAlert(candidate, paperSignal),
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: '📊 Paper stats 7д', callback_data: 'candidates_stats' },
+                { text: '📋 PumpHunter', callback_data: 'pump_refresh' },
+              ],
+            ],
+          },
+        }
+      );
+    }
+  }
+
+  _formatPumpAutoAlert(candidate, paperSignal) {
+    return [
+      '🚀 ГОТОВЫЙ PUMP-ВХОД (auto)',
+      '━━━━━━━━━━━━━━━━━━━━',
+      `${candidate.pair} LONG`,
+      `Score ${candidate.score}/100 | RR ${candidate.riskReward}`,
+      `Entry $${candidate.entryPrice} | TP $${candidate.takeProfit} (+20%) | SL $${candidate.stopLoss} (-15%)`,
+      `Fresh +${candidate.freshFromLow}% от low | 24h ${candidate.priceChange24h}% | volume x${candidate.volumeBoost}`,
+      `Turnover 24h $${PumpHunterEngine._formatMoney(candidate.turnover24h)} | от high -${candidate.distanceFromHigh}%`,
+      `Источник: ${this._formatPumpSource(candidate.marketSource)}`,
+      `Причина: ${candidate.summary}`,
+      paperSignal
+        ? '🧪 Записано в paper для TP/SL/timeout статистики'
+        : '⚠️ Paper не записан: tracking выключен или дубль по этому сетапу',
+      '',
+      'Реальная сделка на Bybit не открывается автоматически.',
+    ].join('\n');
   }
 
   async _sendCandidateAlertsToUser(user, candidates) {
@@ -248,6 +410,37 @@ class Scheduler {
 
   _candidateCooldownKey(userId, pair) {
     return `${userId}:${this._normalizePair(pair)}`;
+  }
+
+  _isPumpPairInCooldown(userId, pair) {
+    const key = this._pumpCooldownKey(userId, pair);
+    const lastAlertAt = this.pumpAlertCooldowns.get(key);
+    if (!lastAlertAt) return false;
+
+    const cooldownMs = PUMP_AUTO_COOLDOWN_MINUTES * 60 * 1000;
+    if (Date.now() - lastAlertAt > cooldownMs) {
+      this.pumpAlertCooldowns.delete(key);
+      return false;
+    }
+
+    return true;
+  }
+
+  _markPumpPairAlerted(userId, pair) {
+    this.pumpAlertCooldowns.set(
+      this._pumpCooldownKey(userId, pair),
+      Date.now()
+    );
+  }
+
+  _pumpCooldownKey(userId, pair) {
+    return `${userId}:${this._normalizePair(pair)}`;
+  }
+
+  _formatPumpSource(source) {
+    if (source === 'BINANCE_FUTURES_FALLBACK') return 'Binance futures fallback';
+    if (source === 'OKX_SWAP_FALLBACK') return 'OKX swap fallback';
+    return 'Bybit futures';
   }
 
   async _sendSignalsToUser(user, signals) {
@@ -510,6 +703,8 @@ ${paperSignal ? '\n🧪 Paper signal записан для отслеживан�
       nextScan: new Date(Date.now() + SCAN_INTERVAL_MS),
       lastCandidateScan: this.lastCandidateScanTime,
       nextCandidateScan: new Date(Date.now() + CANDIDATE_AUTO_SCAN_INTERVAL_MS),
+      lastPumpScan: this.lastPumpScanTime,
+      nextPumpScan: new Date(Date.now() + PUMP_AUTO_SCAN_INTERVAL_MS),
       cryptoMarketOpen: true,
       msUntilReset: this._getMsUntilNext8am(),
     };

@@ -26,6 +26,11 @@ const {
   PUMP_HUNTER_KLINE_LIMIT,
   PUMP_HUNTER_ACTIONABLE_LIMIT,
   PUMP_HUNTER_FALLBACK_MARKET,
+  PUMP_AUTO_SCAN_ENABLED,
+  PUMP_AUTO_SCAN_INTERVAL_MS,
+  PUMP_AUTO_MIN_SCORE,
+  PUMP_AUTO_COOLDOWN_MINUTES,
+  PUMP_AUTO_MAX_ALERTS,
 } = require('../config/pumpHunter');
 const {
   PAPER_SIGNAL_TRACKING_ENABLED,
@@ -45,6 +50,7 @@ const BOT_COMMANDS = [
   { command: 'candidates', description: 'Топ сценариев: full/paper' },
   { command: 'candidate_auto', description: 'Авто candidates: on/off/status' },
   { command: 'pump', description: 'PumpHunter Lab: full/paper' },
+  { command: 'pump_auto', description: 'Авто PumpHunter: on/off/status' },
   { command: 'signals', description: 'Paper TP/SL статистика: 7/30/all' },
   { command: 'patterns', description: 'Паттерны: full 14/30/all' },
   { command: 'status', description: 'Открытые позиции' },
@@ -78,6 +84,7 @@ class ScalpArenaBot {
     this.candidateSnapshots = new Map();
     this.pumpSnapshots = new Map();
     this.candidateAutoOverrides = new Map();
+    this.pumpAutoOverrides = new Map();
 
     console.log('✅ ScalpArenaBot initialized');
     this._registerCommands();
@@ -135,7 +142,8 @@ class ScalpArenaBot {
     this.bot.onText(/\/stats/, this._safe((msg) => this._onStats(msg)));
     this.bot.onText(/\/candidates/, this._safe((msg) => this._onCandidates(msg)));
     this.bot.onText(/\/candidate_?auto(?:\s+(\S+))?/, this._safe((msg, match) => this._onCandidateAuto(msg, match)));
-    this.bot.onText(/\/pump(?:\s+(\S+))?/, this._safe((msg) => this._onPump(msg)));
+    this.bot.onText(/\/pump_?auto(?:\s+(\S+))?/, this._safe((msg, match) => this._onPumpAuto(msg, match)));
+    this.bot.onText(/\/pump(?:\s+(\S+))?$/, this._safe((msg) => this._onPump(msg)));
     this.bot.onText(/\/signals/, this._safe((msg) => this._onSignals(msg)));
     this.bot.onText(/\/signal_stats/, this._safe((msg) => this._onSignals(msg)));
     this.bot.onText(/\/patterns/, this._safe((msg) => this._onPatterns(msg)));
@@ -243,6 +251,7 @@ class ScalpArenaBot {
 /pump — pump-кандидаты
 /pump full — детали
 /pump paper — записать pump-входы в paper
+/pump_auto status — авто-PumpHunter
 
 📊 Статистика:
 /signals 7 — paper TP/SL статистика
@@ -641,6 +650,27 @@ ${insights}
     }
 
     return this._sendPlain(userId, this._formatCandidateAutoStatus(userId));
+  }
+
+  async _onPumpAuto(msg, match) {
+    const userId = String(msg.chat.id);
+    const action = String(match?.[1] || 'status').toLowerCase();
+
+    if (action === 'on') {
+      this.pumpAutoOverrides.set(userId, true);
+      return this._sendPlain(userId, this._formatPumpAutoStatus(userId, '✅ Pump auto включен для текущего runtime.'));
+    }
+
+    if (action === 'off') {
+      this.pumpAutoOverrides.set(userId, false);
+      return this._sendPlain(userId, this._formatPumpAutoStatus(userId, '⏸️ Pump auto выключен для текущего runtime.'));
+    }
+
+    if (action !== 'status') {
+      return this._sendPlain(userId, 'Используй: /pump_auto on, /pump_auto off или /pump_auto status. Также работает /pumpauto.');
+    }
+
+    return this._sendPlain(userId, this._formatPumpAutoStatus(userId));
   }
 
   async _onPump(msg) {
@@ -1126,6 +1156,37 @@ ${insights}`
     ].filter(Boolean).join('\n');
   }
 
+  _isPumpAutoEnabled(userId) {
+    const key = String(userId);
+    if (this.pumpAutoOverrides.has(key)) {
+      return this.pumpAutoOverrides.get(key);
+    }
+
+    return PUMP_AUTO_SCAN_ENABLED;
+  }
+
+  _formatPumpAutoStatus(userId, prefix = '') {
+    const enabled = this._isPumpAutoEnabled(userId);
+    const override = this.pumpAutoOverrides.has(String(userId))
+      ? 'runtime override'
+      : 'Railway env default';
+
+    return [
+      prefix,
+      '🚀 Pump auto status',
+      '━━━━━━━━━━━━━━━━━━━━',
+      `Статус: ${enabled ? 'ON' : 'OFF'} (${override})`,
+      `Интервал: ${Math.round(PUMP_AUTO_SCAN_INTERVAL_MS / 60000)} мин`,
+      `Фильтр: score >= ${PUMP_AUTO_MIN_SCORE}`,
+      `Cooldown по паре: ${PUMP_AUTO_COOLDOWN_MINUTES} мин`,
+      `Макс алертов за цикл: ${PUMP_AUTO_MAX_ALERTS}`,
+      `Fallback market data: ${PUMP_HUNTER_FALLBACK_MARKET}`,
+      'Live Bybit orders: OFF',
+      '',
+      'Постоянно включить после redeploy: PUMP_AUTO_SCAN_ENABLED=true в Railway Variables.',
+    ].filter(Boolean).join('\n');
+  }
+
   _parseDaysPeriod(value, defaultDays = 7) {
     if (value === 'all') {
       return { days: 9999, isAll: true };
@@ -1228,6 +1289,9 @@ ${insights}`
 /pump full — диагностика pump-кандидатов
 /pump paper — записать pump-входы в paper
 /pump debug — проверить Bybit REST доступ
+/pump_auto status — статус авто-PumpHunter
+/pump_auto on / off — включить/выключить авто-PumpHunter в runtime
+/pumpauto on / off — короткий alias
 
 📊 *Статистика*
 /signals 7 / 30 / all — paper-сигналы и TP/SL статистика
