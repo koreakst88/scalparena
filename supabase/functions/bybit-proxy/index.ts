@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 
+const PROXY_VERSION = '2026-06-30-raw-json-v1';
 const BYBIT_BASES = (Deno.env.get('BYBIT_PROXY_BASES') ||
   'https://api.bybit.com,https://api.bytick.com,https://api.bybit-tr.com,https://api.bybit.kz')
   .split(',')
@@ -14,7 +15,14 @@ const corsHeaders = {
 function jsonResponse(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    headers: { ...corsHeaders, 'Content-Type': 'application/json', 'x-scalparena-proxy-version': PROXY_VERSION },
+  });
+}
+
+function bybitJsonResponse(text: string) {
+  return new Response(text, {
+    status: 200,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json', 'x-scalparena-proxy-version': PROXY_VERSION },
   });
 }
 
@@ -72,12 +80,7 @@ serve(async (req) => {
           continue;
         }
 
-        try {
-          const data = JSON.parse(text);
-          return jsonResponse(data);
-        } catch (parseError) {
-          attempts.push({ base, status: response.status, error: errorMessage(parseError), preview: preview(text) });
-        }
+        return bybitJsonResponse(text);
       } catch (error) {
         attempts.push({ base, error: errorMessage(error) });
       }

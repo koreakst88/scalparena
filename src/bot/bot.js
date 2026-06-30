@@ -675,6 +675,7 @@ ${insights}
         `Last host used: ${this.provider.lastPublicMarketHost || 'n/a'}`,
         `Proxy configured: ${this.provider.supabaseProxyUrl ? 'yes' : 'no'}`,
         `Proxy auth configured: ${this.provider.supabaseProxyKey ? 'yes' : 'no'}`,
+        `Proxy version: ${this.provider.lastSupabaseProxyVersion || 'n/a'}`,
         `Last REST error: ${marketError}`,
         `Last proxy error: ${proxyError}`,
         `First symbols: ${first}`,

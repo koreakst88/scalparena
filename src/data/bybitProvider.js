@@ -44,6 +44,7 @@ class BybitDataProvider {
     this.lastPublicMarketHost = null;
     this.lastPublicMarketError = null;
     this.lastSupabaseProxyError = null;
+    this.lastSupabaseProxyVersion = null;
     this.supabaseProxyUrl = process.env.SUPABASE_PROXY_URL;
     this.supabaseProxyKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || '';
 
@@ -435,6 +436,8 @@ class BybitDataProvider {
         headers: this._getSupabaseProxyHeaders(),
         timeout: 20000,
       });
+      this.lastSupabaseProxyVersion = response.headers?.['x-scalparena-proxy-version'] || null;
+      response.data = this._normalizeProxyResponseData(response.data);
       this.lastPublicMarketHost = 'supabase-proxy';
       return response;
     } catch (error) {
@@ -453,6 +456,7 @@ class BybitDataProvider {
     this.lastPublicMarketHost = null;
     this.lastPublicMarketError = null;
     this.lastSupabaseProxyError = null;
+    this.lastSupabaseProxyVersion = null;
   }
 
   _formatAxiosError(error) {
@@ -462,6 +466,17 @@ class BybitDataProvider {
       message: data.error || data.message || error.message,
       attempts: Array.isArray(data.attempts) ? data.attempts.slice(0, 3) : [],
     };
+  }
+
+  _normalizeProxyResponseData(data) {
+    if (typeof data !== 'string') return data;
+
+    try {
+      return JSON.parse(data);
+    } catch (error) {
+      const preview = data.replace(/\s+/g, ' ').trim().slice(0, 220);
+      throw new Error(`Supabase proxy returned invalid JSON: ${error.message}; preview=${preview}`);
+    }
   }
 
   _getSupabaseProxyHeaders() {
