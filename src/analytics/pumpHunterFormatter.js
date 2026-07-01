@@ -50,7 +50,7 @@ class PumpHunterFormatter {
 
   static formatPaperResult(tracked) {
     if (!tracked.length) {
-      return '🧪 В paper ничего не записано: сейчас нет готовых pump-входов.';
+      return '🧪 В paper ничего не записано: нет новых pump-входов для записи. Возможная причина: вход уже наблюдается в paper.';
     }
 
     const lines = [

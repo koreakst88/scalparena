@@ -1,4 +1,29 @@
 class PaperSignalStats {
+  static filterByProject(signals = [], project = 'all') {
+    const normalized = String(project || 'all').toLowerCase();
+
+    if (normalized === 'pump') {
+      return signals.filter((signal) => (
+        signal.strategy === 'PUMP_HUNTER' ||
+        ['PUMP_HUNTER', 'PUMP_AUTO'].includes(signal.source)
+      ));
+    }
+
+    if (normalized === 'candidates' || normalized === 'candidate') {
+      return signals.filter((signal) => (
+        ['CANDIDATE_ENGINE', 'CANDIDATE_AUTO'].includes(signal.source)
+      ));
+    }
+
+    if (normalized === 'hybrid' || normalized === 'scan') {
+      return signals.filter((signal) => (
+        ['AUTO_SCAN', 'MANUAL_SCAN'].includes(signal.source)
+      ));
+    }
+
+    return signals;
+  }
+
   static calculate(signals = []) {
     const resolved = signals.filter((signal) => signal.status !== 'WATCHING');
     const tp = resolved.filter((signal) => signal.status === 'TP_HIT');
@@ -52,6 +77,38 @@ class PaperSignalStats {
     lines.push(...this._formatRows(stats.byStrategy));
     lines.push('', '📊 Пары:');
     lines.push(...this._formatRows(stats.byPair));
+
+    return lines.join('\n');
+  }
+
+  static formatWatching(signals = [], title = 'активные paper-сигналы') {
+    const watching = signals
+      .filter((signal) => signal.status === 'WATCHING')
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    if (!watching.length) {
+      return `📭 PAPER WATCHING\n\n${title}: активных наблюдений нет.`;
+    }
+
+    const lines = [
+      '👀 PAPER WATCHING',
+      '════════════════════════════════',
+      title,
+      '',
+      `Всего наблюдается: ${watching.length}`,
+      '',
+    ];
+
+    watching.slice(0, 15).forEach((signal, index) => {
+      lines.push(
+        `${index + 1}. ${signal.pair} ${signal.direction} | ${signal.strategy || 'UNKNOWN'} | ${signal.source || 'UNKNOWN'}`
+      );
+      lines.push(`Entry $${signal.entry_price} | TP $${signal.take_profit} | SL $${signal.stop_loss}`);
+    });
+
+    if (watching.length > 15) {
+      lines.push('', `Показано 15 из ${watching.length}.`);
+    }
 
     return lines.join('\n');
   }

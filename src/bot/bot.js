@@ -255,6 +255,8 @@ class ScalpArenaBot {
 
 📊 Статистика:
 /signals 7 — paper TP/SL статистика
+/signals pump 7 — PumpHunter отдельно
+/signals open pump — активные pump-наблюдения
 /stats 7 — сделки
 /patterns full 30 — паттерны
 
@@ -907,18 +909,66 @@ ${insights}`
     if (!user) return this._send(userId, '❌ Сначала /start');
 
     const parts = this._getCommandParts(msg.text);
-    await this._sendPaperSignalStats(userId, parts[1]);
+    await this._sendPaperSignalStats(userId, parts.slice(1));
   }
 
-  async _sendPaperSignalStats(userId, value) {
-    const period = this._parseStatsPeriod(value);
+  async _sendPaperSignalStats(userId, args = []) {
+    const options = this._parsePaperSignalStatsArgs(args);
+    const period = this._parseStatsPeriod(options.period);
     const signals = await this.db.getPaperSignalsSince(userId, period.since);
-    const stats = PaperSignalStats.calculate(signals);
+    const projectSignals = PaperSignalStats.filterByProject(signals, options.project);
+    const title = this._formatPaperSignalStatsTitle(
+      period.title.replace(/[*📊]/g, '').replace('Период:', '').trim(),
+      options.project
+    );
+
+    if (options.mode === 'watching') {
+      await this._sendPlain(userId, PaperSignalStats.formatWatching(projectSignals, title));
+      return;
+    }
+
+    const stats = PaperSignalStats.calculate(projectSignals);
 
     await this._sendPlain(
       userId,
-      PaperSignalStats.format(stats, period.title.replace(/[*📊]/g, '').replace('Период:', '').trim())
+      PaperSignalStats.format(stats, title)
     );
+  }
+
+  _parsePaperSignalStatsArgs(args = []) {
+    let mode = 'stats';
+    let project = 'all';
+    let period = undefined;
+
+    args.forEach((raw) => {
+      const value = String(raw || '').toLowerCase();
+      if (!value) return;
+
+      if (['open', 'watching', 'active'].includes(value)) {
+        mode = 'watching';
+      } else if (['pump', 'pumphunter'].includes(value)) {
+        project = 'pump';
+      } else if (['candidate', 'candidates'].includes(value)) {
+        project = 'candidates';
+      } else if (['hybrid', 'scan'].includes(value)) {
+        project = 'hybrid';
+      } else {
+        period = value;
+      }
+    });
+
+    return { mode, project, period };
+  }
+
+  _formatPaperSignalStatsTitle(periodTitle, project = 'all') {
+    const projectTitle = {
+      all: 'все проекты',
+      pump: 'PumpHunter',
+      candidates: 'Candidate Engine',
+      hybrid: 'Hybrid scan',
+    }[project] || project;
+
+    return `${periodTitle} | ${projectTitle}`;
   }
 
   _getCandidateKeyboard(actionableCount = 0) {
@@ -940,7 +990,7 @@ ${insights}`
           { text: '📋 Детали', callback_data: 'candidates_full' },
         ],
         [
-          { text: '📊 Paper stats 7д', callback_data: 'candidates_stats' },
+          { text: '📊 Pump stats 7д', callback_data: 'pump_stats' },
         ],
       ],
     };
@@ -1295,6 +1345,9 @@ ${insights}`
 
 📊 *Статистика*
 /signals 7 / 30 / all — paper-сигналы и TP/SL статистика
+/signals pump 7 — только PumpHunter
+/signals candidates 7 — только Candidate Engine
+/signals open pump — активные PumpHunter наблюдения
 /stats — статистика дня
 /stats 7 / 30 / all — статистика за период
 /stats v2 / 30 v2 — только новая версия
@@ -1344,7 +1397,11 @@ ${insights}`
     }
 
     if (data === 'candidates_stats') {
-      return this._sendPaperSignalStats(userId, '7');
+      return this._sendPaperSignalStats(userId, ['candidates', '7']);
+    }
+
+    if (data === 'pump_stats') {
+      return this._sendPaperSignalStats(userId, ['pump', '7']);
     }
 
     if (data === 'pump_refresh') {
