@@ -69,6 +69,8 @@ const checks = [
   { name: 'winRate = 50%', pass: stats.winRate === 50 },
   { name: 'avgTimeToResult = 44', pass: stats.avgTimeToResult === 44 },
   { name: 'message includes PAPER SIGNALS', pass: message.includes('PAPER SIGNALS') },
+  { name: 'message shows watching count per row', pass: message.includes('W:1') },
+  { name: 'message hints open signal commands', pass: message.includes('/signals open pump') },
   { name: 'strategy grouping exists', pass: stats.byStrategy[0].total === 2 },
   { name: 'pump filter keeps only PumpHunter', pass: pumpSignals.length === 1 && pumpSignals[0].pair === 'HUSDT' },
   { name: 'candidate filter keeps Candidate Engine source', pass: candidateSignals.length === 1 && candidateSignals[0].pair === 'KGENUSDT' },

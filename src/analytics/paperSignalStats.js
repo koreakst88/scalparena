@@ -78,6 +78,10 @@ class PaperSignalStats {
     lines.push('', '📊 Пары:');
     lines.push(...this._formatRows(stats.byPair));
 
+    if (stats.watching > 0) {
+      lines.push('', '👀 Активные наблюдения: /signals open | /signals open pump | /signals open candidates');
+    }
+
     return lines.join('\n');
   }
 
@@ -145,7 +149,7 @@ class PaperSignalStats {
     if (!rows.length) return ['нет данных'];
 
     return rows.slice(0, 5).map((row, index) => {
-      return `${index + 1}. ${row.label}: ${row.tp}/${row.sl} TP/SL | WR ${this._formatPercent(row.winRate)} | N:${row.total}`;
+      return `${index + 1}. ${row.label}: ${row.tp}/${row.sl} TP/SL | WR ${this._formatPercent(row.winRate)} | W:${row.watching} | N:${row.total}`;
     });
   }
 
