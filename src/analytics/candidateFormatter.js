@@ -1,3 +1,5 @@
+const CandidateEngine = require('../engine/candidateEngine');
+
 class CandidateFormatter {
   static formatTop(reports, actionable = []) {
     const lines = [
@@ -5,6 +7,7 @@ class CandidateFormatter {
       '━━━━━━━━━━━━━━━━━━━━',
       `Проверено: ${reports.length} пар`,
       `Готовых входов: ${actionable.length}`,
+      'Режим: BREAKOUT primary | TREND_PULLBACK strict | MR watch-only',
       '',
     ];
 
@@ -51,7 +54,12 @@ class CandidateFormatter {
 
   static formatPaperResult(tracked) {
     if (!tracked.length) {
-      return '🧪 В paper ничего не записано: сейчас нет готовых входов с оценкой >= 70 и RR >= 1.0';
+      return [
+        '🧪 В paper ничего не записано: сейчас нет готовых входов по текущим правилам.',
+        'BREAKOUT: score >= 70',
+        'TREND_PULLBACK: score >= 80',
+        'MEAN_REVERSION: только наблюдение',
+      ].join('\n');
     }
 
     const lines = [
@@ -67,16 +75,17 @@ class CandidateFormatter {
   }
 
   static _formatReportSummary(report, index) {
-    const candidate = report.bestTrade || report.best;
+    const candidate = CandidateEngine.getDisplayCandidate(report);
 
     if (!candidate || candidate.action === 'NO_TRADE') {
       return `${index}. ${report.pair}: ждать\n${this._cleanSummary(report.best.summary)}`;
     }
 
-    const status = candidate.score >= 70 ? 'ГОТОВЫЙ ВХОД' : 'НАБЛЮДАТЬ';
+    const isActionable = CandidateEngine.isActionableCandidate(candidate);
+    const status = isActionable ? 'ГОТОВЫЙ ВХОД' : 'НАБЛЮДАТЬ';
     const decision = report.best.action === 'NO_TRADE'
       ? this._cleanSummary(report.best.summary)
-      : status;
+      : CandidateEngine.getActionabilityReason(candidate);
 
     return [
       `${index}. ${candidate.pair} ${this._directionLabel(candidate.direction)} | ${status}`,

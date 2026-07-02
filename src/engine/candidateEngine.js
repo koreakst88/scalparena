@@ -2,6 +2,22 @@ const SignalDetector = require('./signalDetector');
 
 const CANDIDATE_MIN_SCORE = 70;
 const CANDIDATE_MIN_RR = 1;
+const CANDIDATE_WATCH_ONLY_PAIRS = new Set(['BTCUSDT', 'ETHUSDT', 'SOLUSDT']);
+
+const ACTIONABLE_RULES = {
+  BREAKOUT: {
+    minScore: 70,
+    enabled: true,
+  },
+  TREND_PULLBACK: {
+    minScore: 80,
+    enabled: true,
+  },
+  MEAN_REVERSION: {
+    minScore: Infinity,
+    enabled: false,
+  },
+};
 
 const STRATEGIES = {
   TREND_PULLBACK: {
@@ -35,8 +51,8 @@ class CandidateEngine {
     return reports.sort((a, b) => {
       const rankDiff = this._getReportRank(b) - this._getReportRank(a);
       if (rankDiff !== 0) return rankDiff;
-      const aCandidate = a.bestTrade || a.best;
-      const bCandidate = b.bestTrade || b.best;
+      const aCandidate = this.getDisplayCandidate(a);
+      const bCandidate = this.getDisplayCandidate(b);
       if (bCandidate.score !== aCandidate.score) return bCandidate.score - aCandidate.score;
       if (bCandidate.riskReward !== aCandidate.riskReward) return bCandidate.riskReward - aCandidate.riskReward;
       return String(a.pair).localeCompare(String(b.pair));
@@ -78,15 +94,61 @@ class CandidateEngine {
 
   static getActionableCandidates(reports, limit = 3) {
     return reports
-      .map((report) => report.bestTrade || report.best)
-      .filter((candidate) => candidate.action !== 'NO_TRADE')
-      .filter((candidate) => candidate.score >= CANDIDATE_MIN_SCORE)
-      .filter((candidate) => candidate.riskReward >= CANDIDATE_MIN_RR)
+      .map((report) => this.getBestActionableCandidate(report))
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        if (b.riskReward !== a.riskReward) return b.riskReward - a.riskReward;
+        return String(a.pair).localeCompare(String(b.pair));
+      })
       .slice(0, limit);
   }
 
+  static getBestActionableCandidate(report) {
+    const candidates = report?.candidates || [report?.bestTrade, report?.best].filter(Boolean);
+
+    return candidates
+      .filter((candidate) => this.isActionableCandidate(candidate))
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        if (b.riskReward !== a.riskReward) return b.riskReward - a.riskReward;
+        return String(a.strategy).localeCompare(String(b.strategy));
+      })[0] || null;
+  }
+
+  static getDisplayCandidate(report) {
+    return this.getBestActionableCandidate(report) || report?.bestTrade || report?.best;
+  }
+
+  static isActionableCandidate(candidate) {
+    if (!candidate || candidate.action !== 'TRADE') return false;
+    const rule = ACTIONABLE_RULES[candidate.strategy] || { minScore: CANDIDATE_MIN_SCORE, enabled: true };
+
+    return (
+      rule.enabled &&
+      candidate.score >= rule.minScore &&
+      candidate.riskReward >= CANDIDATE_MIN_RR &&
+      !CANDIDATE_WATCH_ONLY_PAIRS.has(this._normalizePair(candidate.pair))
+    );
+  }
+
+  static getActionabilityReason(candidate) {
+    if (!candidate || candidate.action === 'NO_TRADE') return 'нет торгового сценария';
+    const rule = ACTIONABLE_RULES[candidate.strategy] || { minScore: CANDIDATE_MIN_SCORE, enabled: true };
+
+    if (!rule.enabled) return `${candidate.strategy} временно только для наблюдения`;
+    if (CANDIDATE_WATCH_ONLY_PAIRS.has(this._normalizePair(candidate.pair))) {
+      return `${candidate.pair} временно только для наблюдения по статистике`;
+    }
+    if (candidate.score < rule.minScore) {
+      return `${candidate.strategy} нужен score >= ${rule.minScore}`;
+    }
+    if (candidate.riskReward < CANDIDATE_MIN_RR) return `RR ниже ${CANDIDATE_MIN_RR}`;
+    return 'ГОТОВЫЙ ВХОД';
+  }
+
   static toPaperSignal(candidate) {
-    if (!candidate || candidate.action === 'NO_TRADE') return null;
+    if (!this.isActionableCandidate(candidate)) return null;
 
     return {
       pair: candidate.pair,
@@ -423,8 +485,8 @@ class CandidateEngine {
   }
 
   static _getReportRank(report) {
-    const candidate = report.bestTrade || report.best;
-    if (candidate.action === 'TRADE' && candidate.score >= CANDIDATE_MIN_SCORE) return 3;
+    const candidate = this.getDisplayCandidate(report);
+    if (this.getBestActionableCandidate(report)) return 3;
     if (candidate.action === 'TRADE') return 2;
     if (report.best.strategy === 'NO_DATA') return 0;
     return 1;
@@ -477,6 +539,10 @@ class CandidateEngine {
     if (!Number.isFinite(numeric)) return 0;
     const multiplier = 10 ** digits;
     return Math.round(numeric * multiplier) / multiplier;
+  }
+
+  static _normalizePair(pair) {
+    return String(pair || '').trim().toUpperCase();
   }
 }
 

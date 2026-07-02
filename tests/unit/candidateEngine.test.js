@@ -78,9 +78,24 @@ const mrContext = buildContext({
   },
 });
 
-const longPullback = CandidateEngine._buildTrendPullbackCandidate('BTCUSDT', trendContext);
+const longPullback = CandidateEngine._buildTrendPullbackCandidate('JUPUSDT', trendContext);
 const shortPullback = CandidateEngine._buildTrendPullbackCandidate('ETHUSDT', shortTrendContext);
 const weakPullback = CandidateEngine._buildTrendPullbackCandidate('XRPUSDT', weakContext);
+const breakoutCandidate = CandidateEngine._buildBreakoutCandidate('NEARUSDT', buildContext({
+  rsi: 64,
+  volume: 230,
+  bbPosition: 86,
+  market: {
+    regime: 'TREND_UP',
+    strategy: 'MOMENTUM',
+    ema20: 99.6,
+    ema50: 98,
+    emaSpread: 1.6,
+    roc12: 3,
+    reason: 'strong breakout',
+  },
+}));
+const btcPullback = CandidateEngine._buildTrendPullbackCandidate('BTCUSDT', trendContext);
 const mrCandidate = CandidateEngine._buildMeanReversionCandidate('SOLUSDT', mrContext);
 const noTrade = CandidateEngine._buildNoTradeCandidate('XRPUSDT', weakContext, weakPullback);
 const paperSignal = CandidateEngine.toPaperSignal(longPullback);
@@ -90,7 +105,9 @@ const checks = [
   { name: 'TREND_UP produces strong LONG pullback', pass: longPullback.direction === 'LONG' && longPullback.score >= 70 },
   { name: 'TREND_DOWN produces strong SHORT pullback', pass: shortPullback.direction === 'SHORT' && shortPullback.score >= 70 },
   { name: 'Weak context lowers pullback score', pass: weakPullback.score < 60 },
-  { name: 'Strict bearish MR can score actionable', pass: mrCandidate.direction === 'SHORT' && mrCandidate.score >= 70 },
+  { name: 'Breakout can become actionable from score 70', pass: CandidateEngine.isActionableCandidate(breakoutCandidate) },
+  { name: 'Strict bearish MR is watch-only after stats review', pass: mrCandidate.direction === 'SHORT' && mrCandidate.score >= 70 && !CandidateEngine.isActionableCandidate(mrCandidate) },
+  { name: 'Weak large-cap pairs are watch-only for Candidate Engine', pass: btcPullback.score >= 80 && !CandidateEngine.isActionableCandidate(btcPullback) },
   { name: 'NO_TRADE can beat weak setup', pass: noTrade.action === 'NO_TRADE' && noTrade.score > weakPullback.score },
   { name: 'Candidate converts to paper signal shape', pass: paperSignal.type === 'LONG' && paperSignal.strategy === 'TREND_PULLBACK' },
   { name: 'Actionable filter keeps strong candidates', pass: CandidateEngine.getActionableCandidates([{ best: longPullback }]).length === 1 },
