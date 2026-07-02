@@ -26,6 +26,7 @@ const {
   PUMP_HUNTER_KLINE_LIMIT,
   PUMP_HUNTER_ACTIONABLE_LIMIT,
   PUMP_HUNTER_FALLBACK_MARKET,
+  PUMP_HUNTER_SIGNAL_TTL_MINUTES,
   PUMP_AUTO_SCAN_ENABLED,
   PUMP_AUTO_SCAN_INTERVAL_MS,
   PUMP_AUTO_MIN_SCORE,
@@ -1739,7 +1740,10 @@ Exit:  \`$${price}\`
     if (!PAPER_SIGNAL_TRACKING_ENABLED || !signal) return null;
 
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + PAPER_SIGNAL_TTL_MINUTES * 60 * 1000);
+    const ttlMinutes = signal.strategy === 'PUMP_HUNTER'
+      ? PUMP_HUNTER_SIGNAL_TTL_MINUTES
+      : PAPER_SIGNAL_TTL_MINUTES;
+    const expiresAt = new Date(now.getTime() + ttlMinutes * 60 * 1000);
 
     return this.db.createPaperSignal(userId, {
       pair: signal.pair,

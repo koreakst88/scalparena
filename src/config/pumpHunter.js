@@ -14,6 +14,10 @@ module.exports = {
   PUMP_HUNTER_KLINE_LIMIT: parsePositiveInt(process.env.PUMP_HUNTER_KLINE_LIMIT, 96),
   PUMP_HUNTER_ACTIONABLE_LIMIT: parsePositiveInt(process.env.PUMP_HUNTER_ACTIONABLE_LIMIT, 3),
   PUMP_HUNTER_FALLBACK_MARKET: process.env.PUMP_HUNTER_FALLBACK_MARKET || 'binance,okx',
+  PUMP_HUNTER_SIGNAL_TTL_MINUTES: parsePositiveInt(
+    process.env.PUMP_HUNTER_SIGNAL_TTL_MINUTES,
+    240
+  ),
   PUMP_AUTO_SCAN_ENABLED: parseBoolean(process.env.PUMP_AUTO_SCAN_ENABLED, false),
   PUMP_AUTO_SCAN_INTERVAL_MS: parsePositiveInt(
     process.env.PUMP_AUTO_SCAN_INTERVAL_MS,

@@ -46,13 +46,19 @@ class PaperSignalTracker {
 
   async _checkSignal(signal) {
     const pair = signal.pair?.includes('USDT') ? signal.pair : `${signal.pair}USDT`;
-    const currentPrice = this._getCurrentPrice(pair);
-    if (!currentPrice) return;
-
     const direction = signal.direction || signal.signal_type;
     const now = new Date();
-    const outcome = this._resolveOutcome(signal, currentPrice, direction, now);
-    const extremes = this._calculateExtremes(signal, currentPrice, direction);
+    const timeoutOutcome = this._resolveTimeout(signal, now);
+    const currentPrice = await this._getCurrentPrice(pair, signal);
+
+    if (!currentPrice && !timeoutOutcome) return;
+
+    const outcome = currentPrice
+      ? this._resolveOutcome(signal, currentPrice, direction, now)
+      : timeoutOutcome;
+    const extremes = currentPrice
+      ? this._calculateExtremes(signal, currentPrice, direction)
+      : {};
 
     if (!outcome) {
       await this.db.updatePaperSignal(signal.id, extremes);
@@ -66,7 +72,7 @@ class PaperSignalTracker {
       ...extremes,
       status: outcome.status,
       result: outcome.status,
-      hit_price: currentPrice,
+      hit_price: currentPrice || signal.max_favorable_price || signal.entry_price,
       resolved_at: now.toISOString(),
       time_to_result_minutes: timeToResult,
     });
@@ -74,13 +80,19 @@ class PaperSignalTracker {
     await this._sendOutcome(signal, outcome.status, currentPrice, timeToResult);
   }
 
-  _getCurrentPrice(pair) {
+  async _getCurrentPrice(pair, signal = {}) {
     const currentCandle = this.provider.getCurrentCandle(pair);
     if (currentCandle?.close) return Number(currentCandle.close);
 
     const candles = this.provider.getCandles(pair, 1);
     const last = candles[candles.length - 1];
-    return last?.close ? Number(last.close) : null;
+    if (last?.close) return Number(last.close);
+
+    if (this._isPumpHunterSignal(signal) && this.provider.getOkxSwapPrice) {
+      return this.provider.getOkxSwapPrice(pair);
+    }
+
+    return null;
   }
 
   _resolveOutcome(signal, currentPrice, direction, now) {
@@ -101,6 +113,19 @@ class PaperSignalTracker {
     }
 
     return null;
+  }
+
+  _resolveTimeout(signal, now) {
+    const expiresAt = new Date(signal.expires_at);
+    if (!Number.isNaN(expiresAt.getTime()) && now >= expiresAt) {
+      return { status: 'TIMEOUT' };
+    }
+
+    return null;
+  }
+
+  _isPumpHunterSignal(signal) {
+    return signal.strategy === 'PUMP_HUNTER' || ['PUMP_HUNTER', 'PUMP_AUTO'].includes(signal.source);
   }
 
   _calculateExtremes(signal, currentPrice, direction) {
@@ -127,6 +152,7 @@ class PaperSignalTracker {
       : status === 'SL_HIT'
         ? 'PAPER SL HIT'
         : 'PAPER TIMEOUT';
+    const priceLabel = price ? `$${price}` : 'n/a';
 
     await this.bot._sendPlain(
       signal.user_id,
@@ -136,7 +162,7 @@ class PaperSignalTracker {
 ${signal.pair} ${signal.direction}
 Strategy: ${signal.strategy || 'UNKNOWN'}
 Entry: $${signal.entry_price}
-Current: $${price}
+Current: ${priceLabel}
 TP: $${signal.take_profit}
 SL: $${signal.stop_loss}
 Time: ${minutes} мин

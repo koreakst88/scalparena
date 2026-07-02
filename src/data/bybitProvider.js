@@ -506,6 +506,29 @@ class BybitDataProvider {
     }
   }
 
+  async getOkxSwapPrice(pair) {
+    try {
+      const response = await axios.get(`${OKX_PUBLIC_BASE}/api/v5/market/ticker`, {
+        params: {
+          instId: this._symbolToOkxInstId(pair),
+        },
+        timeout: 15000,
+      });
+
+      if (response.data?.code !== '0') {
+        throw new Error(`OKX retCode ${response.data?.code}: ${response.data?.msg || 'unknown'}`);
+      }
+
+      const ticker = response.data?.data?.[0];
+      const price = Number(ticker?.last);
+      return Number.isFinite(price) && price > 0 ? price : null;
+    } catch (error) {
+      this.lastOkxMarketError = this._formatAxiosError(error);
+      console.error(`❌ OKX swap price request failed for ${pair}:`, error.response?.status || error.message);
+      return null;
+    }
+  }
+
   async _requestPublicMarket(path, params) {
     let lastError = null;
 
