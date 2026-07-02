@@ -10,12 +10,24 @@ const signals = [
     strategy: 'TREND_PULLBACK',
     status: 'TP_HIT',
     time_to_result_minutes: 24,
+    direction: 'LONG',
+    entry_price: 100,
+    take_profit: 102,
+    stop_loss: 99,
+    max_favorable_price: 102,
+    max_adverse_price: 99.5,
   },
   {
     pair: 'SOLUSDT',
     strategy: 'TREND_PULLBACK',
     status: 'SL_HIT',
     time_to_result_minutes: 18,
+    direction: 'LONG',
+    entry_price: 100,
+    take_profit: 102,
+    stop_loss: 99,
+    max_favorable_price: 100.8,
+    max_adverse_price: 99,
   },
   {
     pair: 'BTCUSDT',
@@ -57,6 +69,7 @@ const message = PaperSignalStats.format(stats, 'последние 7 дн.');
 const pumpSignals = PaperSignalStats.filterByProject(signals, 'pump');
 const candidateSignals = PaperSignalStats.filterByProject(signals, 'candidates');
 const watchingMessage = PaperSignalStats.formatWatching(pumpSignals, 'последние 7 дн. | PumpHunter');
+const detailMessage = PaperSignalStats.formatDetail(candidateSignals, 'последние 7 дн. | Candidate Engine');
 
 console.log(message);
 
@@ -75,6 +88,7 @@ const checks = [
   { name: 'pump filter keeps only PumpHunter', pass: pumpSignals.length === 1 && pumpSignals[0].pair === 'HUSDT' },
   { name: 'candidate filter keeps Candidate Engine source', pass: candidateSignals.length === 1 && candidateSignals[0].pair === 'KGENUSDT' },
   { name: 'watching message lists active pump signal', pass: watchingMessage.includes('HUSDT') && watchingMessage.includes('PUMP_AUTO') },
+  { name: 'detail message includes MFE/MAE diagnostics', pass: detailMessage.includes('PAPER DETAIL') && detailMessage.includes('Avg MFE') },
 ];
 
 console.log('\n🎯 Final checks:');

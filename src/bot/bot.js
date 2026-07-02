@@ -928,6 +928,11 @@ ${insights}`
       return;
     }
 
+    if (options.mode === 'detail') {
+      await this._sendPlainChunks(userId, PaperSignalStats.formatDetail(projectSignals, title));
+      return;
+    }
+
     const stats = PaperSignalStats.calculate(projectSignals);
 
     await this._sendPlain(
@@ -947,6 +952,8 @@ ${insights}`
 
       if (['open', 'watching', 'active'].includes(value)) {
         mode = 'watching';
+      } else if (['detail', 'details', 'full'].includes(value)) {
+        mode = 'detail';
       } else if (['pump', 'pumphunter'].includes(value)) {
         project = 'pump';
       } else if (['candidate', 'candidates'].includes(value)) {
@@ -1348,6 +1355,7 @@ ${insights}`
 /signals 7 / 30 / all — paper-сигналы и TP/SL статистика
 /signals pump 7 — только PumpHunter
 /signals candidates 7 — только Candidate Engine
+/signals candidates detail 7 — MFE/MAE диагностика Candidate Engine
 /signals open pump — активные PumpHunter наблюдения
 /stats — статистика дня
 /stats 7 / 30 / all — статистика за период
