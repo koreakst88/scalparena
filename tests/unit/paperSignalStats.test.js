@@ -49,6 +49,8 @@ const signals = [
     entry_price: 0.07,
     take_profit: 0.084,
     stop_loss: 0.0595,
+    max_favorable_price: 0.075,
+    max_adverse_price: 0.068,
     created_at: '2026-06-30T10:00:00Z',
   },
   {
@@ -70,6 +72,7 @@ const pumpSignals = PaperSignalStats.filterByProject(signals, 'pump');
 const candidateSignals = PaperSignalStats.filterByProject(signals, 'candidates');
 const watchingMessage = PaperSignalStats.formatWatching(pumpSignals, 'последние 7 дн. | PumpHunter');
 const detailMessage = PaperSignalStats.formatDetail(candidateSignals, 'последние 7 дн. | Candidate Engine');
+const edgeMessage = PaperSignalStats.formatEdge(pumpSignals, 'последние 7 дн. | PumpHunter');
 
 console.log(message);
 
@@ -89,6 +92,7 @@ const checks = [
   { name: 'candidate filter keeps Candidate Engine source', pass: candidateSignals.length === 1 && candidateSignals[0].pair === 'KGENUSDT' },
   { name: 'watching message lists active pump signal', pass: watchingMessage.includes('HUSDT') && watchingMessage.includes('PUMP_AUTO') },
   { name: 'detail message includes MFE/MAE diagnostics', pass: detailMessage.includes('PAPER DETAIL') && detailMessage.includes('Avg MFE') },
+  { name: 'edge message includes MFE thresholds', pass: edgeMessage.includes('PAPER EDGE') && edgeMessage.includes('>=5% MFE') && edgeMessage.includes('MFE пороги') },
 ];
 
 console.log('\n🎯 Final checks:');

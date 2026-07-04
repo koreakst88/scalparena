@@ -257,6 +257,7 @@ class ScalpArenaBot {
 📊 Статистика:
 /signals 7 — paper TP/SL статистика
 /signals pump 7 — PumpHunter отдельно
+/signals pump edge 7 — плюсовые движения PumpHunter
 /signals open pump — активные pump-наблюдения
 /stats 7 — сделки
 /patterns full 30 — паттерны
@@ -933,6 +934,11 @@ ${insights}`
       return;
     }
 
+    if (options.mode === 'edge') {
+      await this._sendPlainChunks(userId, PaperSignalStats.formatEdge(projectSignals, title));
+      return;
+    }
+
     const stats = PaperSignalStats.calculate(projectSignals);
 
     await this._sendPlain(
@@ -954,6 +960,8 @@ ${insights}`
         mode = 'watching';
       } else if (['detail', 'details', 'full'].includes(value)) {
         mode = 'detail';
+      } else if (['edge', 'mfe', 'profit'].includes(value)) {
+        mode = 'edge';
       } else if (['pump', 'pumphunter'].includes(value)) {
         project = 'pump';
       } else if (['candidate', 'candidates'].includes(value)) {
@@ -1354,6 +1362,7 @@ ${insights}`
 📊 *Статистика*
 /signals 7 / 30 / all — paper-сигналы и TP/SL статистика
 /signals pump 7 — только PumpHunter
+/signals pump edge 7 — MFE/плюсовые движения PumpHunter
 /signals candidates 7 — только Candidate Engine
 /signals candidates detail 7 — MFE/MAE диагностика Candidate Engine
 /signals open pump — активные PumpHunter наблюдения

@@ -80,8 +80,9 @@ Telegram команды:
 - `/pump full` - подробная диагностика
 - `/pump paper` - записать готовые pump-входы в paper tracking
 - `/pump debug` - проверить доступ к Bybit public REST
+- `/signals pump edge 7` - посмотреть MFE/плюсовые движения PumpHunter
 
-Логика v1: ищем монеты, которые уже дали fresh move от локального low, но еще не выглядят слишком поздними. TP +20%, SL -15%, live Bybit orders OFF.
+Логика v2: ищем монеты, которые уже дали fresh move от локального low, но еще не выглядят слишком поздними. Основной paper TP +8%, SL -6%, moon level +20% считается отдельно как аналитический бонус-уровень. Live Bybit orders OFF.
 
 ## Deployment
 

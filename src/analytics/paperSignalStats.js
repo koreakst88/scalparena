@@ -162,6 +162,49 @@ class PaperSignalStats {
     return lines.join('\n');
   }
 
+  static formatEdge(signals = [], title = 'период') {
+    if (!signals.length) {
+      return `📭 PAPER EDGE\n\nЗа ${title} сигналов пока нет.`;
+    }
+
+    const enriched = signals.map((signal) => this._enrichSignal(signal));
+    const resolved = enriched.filter((signal) => signal.status !== 'WATCHING');
+    const thresholds = [0.5, 1, 2, 3, 5, 8, 10, 15, 20];
+    const avgMfe = this._avg(enriched.map((signal) => signal.mfePercent).filter(Number.isFinite));
+    const avgMae = this._avg(enriched.map((signal) => signal.maePercent).filter(Number.isFinite));
+    const positive = enriched.filter((signal) => Number.isFinite(signal.mfePercent) && signal.mfePercent > 0);
+    const strong = enriched.filter((signal) => Number.isFinite(signal.mfePercent) && signal.mfePercent >= 5);
+    const moon = enriched.filter((signal) => Number.isFinite(signal.mfePercent) && signal.mfePercent >= 20);
+    const lines = [
+      '📈 PAPER EDGE',
+      '════════════════════════════════',
+      `Период: ${title}`,
+      '',
+      `Всего: ${signals.length}`,
+      `Resolved: ${resolved.length}`,
+      `Хоть раз в плюс: ${positive.length}/${signals.length} (${this._formatPercent(this._rate(positive.length, signals.length))})`,
+      `>=5% MFE: ${strong.length}/${signals.length} (${this._formatPercent(this._rate(strong.length, signals.length))})`,
+      `>=20% moon: ${moon.length}/${signals.length} (${this._formatPercent(this._rate(moon.length, signals.length))})`,
+      `Avg MFE: ${this._formatPercent(avgMfe)}`,
+      `Avg MAE: ${this._formatPercent(avgMae)}`,
+      '',
+      '🎯 MFE пороги:',
+    ];
+
+    thresholds.forEach((threshold) => {
+      const count = enriched.filter((signal) => Number.isFinite(signal.mfePercent) && signal.mfePercent >= threshold).length;
+      lines.push(`>=${threshold}%: ${count}/${signals.length} (${this._formatPercent(this._rate(count, signals.length))})`);
+    });
+
+    lines.push('', '🏆 Лучшие движения:');
+    lines.push(...this._formatEdgeSignals(enriched.slice().sort((a, b) => (b.mfePercent || 0) - (a.mfePercent || 0)).slice(0, 7)));
+
+    lines.push('', '🧯 Худшие движения:');
+    lines.push(...this._formatEdgeSignals(enriched.slice().sort((a, b) => (a.mfePercent || 0) - (b.mfePercent || 0)).slice(0, 7)));
+
+    return lines.join('\n');
+  }
+
   static _group(signals, getKey) {
     const groups = {};
 
@@ -253,6 +296,15 @@ class PaperSignalStats {
       `${index + 1}. ${row.label}: ${row.tp}/${row.sl} TP/SL | TO:${row.timeout} | W:${row.watching} | ` +
       `WR ${this._formatPercent(row.winRate)} | MFE ${this._formatPercent(row.avgMfe)} | ` +
       `MAE ${this._formatPercent(row.avgMae)} | TPp ${this._formatPercent(row.avgTpProgress)} | N:${row.total}`
+    ));
+  }
+
+  static _formatEdgeSignals(signals) {
+    if (!signals.length) return ['нет данных'];
+
+    return signals.map((signal, index) => (
+      `${index + 1}. ${signal.pair} ${signal.status} | MFE ${this._formatPercent(signal.mfePercent)} | ` +
+      `MAE ${this._formatPercent(signal.maePercent)} | TPp ${this._formatPercent(signal.tpProgress)}`
     ));
   }
 

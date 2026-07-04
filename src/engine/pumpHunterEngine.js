@@ -1,11 +1,15 @@
 const DEFAULT_SCAN_LIMIT = 60;
 const DEFAULT_KLINE_INTERVAL = '15';
 const DEFAULT_KLINE_LIMIT = 96;
-const MIN_SCORE = 70;
+const MIN_SCORE = 80;
 const MIN_FRESH_FROM_LOW = 20;
-const MAX_FRESH_FROM_LOW = 60;
-const MIN_VOLUME_BOOST = 1.5;
-const MIN_TURNOVER_24H = 300000;
+const MAX_FRESH_FROM_LOW = 40;
+const MIN_VOLUME_BOOST = 2;
+const MIN_TURNOVER_24H = 5000000;
+const MAX_DISTANCE_FROM_HIGH = 5;
+const QUICK_TP_PERCENT = 8;
+const QUICK_SL_PERCENT = 6;
+const MOON_TP_PERCENT = 20;
 
 class PumpHunterEngine {
   static async scan(provider, options = {}) {
@@ -70,7 +74,7 @@ class PumpHunterEngine {
     score += this._scoreTurnover(turnover24h);
     score += this._score24hChange(priceChange24h);
     if (breakout) score += 12;
-    if (distanceFromHigh <= 12) score += 8;
+    if (distanceFromHigh <= MAX_DISTANCE_FROM_HIGH) score += 8;
     if (tooExtended) score -= Math.min(30, (freshFromLow - MAX_FRESH_FROM_LOW) * 0.7);
 
     score = this._round(Math.max(0, Math.min(100, score)), 0);
@@ -79,12 +83,15 @@ class PumpHunterEngine {
       freshFromLow >= MIN_FRESH_FROM_LOW &&
       freshFromLow <= MAX_FRESH_FROM_LOW &&
       volumeBoost >= MIN_VOLUME_BOOST &&
-      turnover24h >= MIN_TURNOVER_24H
+      turnover24h >= MIN_TURNOVER_24H &&
+      distanceFromHigh <= MAX_DISTANCE_FROM_HIGH &&
+      breakout
     ) ? 'TRADE' : 'WATCH';
 
     const entryPrice = this._round(current, 8);
-    const stopLoss = this._round(current * 0.85, 8);
-    const takeProfit = this._round(current * 1.2, 8);
+    const stopLoss = this._round(current * (1 - QUICK_SL_PERCENT / 100), 8);
+    const takeProfit = this._round(current * (1 + QUICK_TP_PERCENT / 100), 8);
+    const moonTakeProfit = this._round(current * (1 + MOON_TP_PERCENT / 100), 8);
 
     return {
       pair,
@@ -93,12 +100,14 @@ class PumpHunterEngine {
       strategy: 'PUMP_HUNTER',
       entryMode: 'FRESH_PUMP_CONTINUATION',
       score,
-      riskReward: 1.33,
+      riskReward: this._round(QUICK_TP_PERCENT / QUICK_SL_PERCENT, 2),
       entryPrice,
       stopLoss,
       takeProfit,
-      tpPercent: 20,
-      slPercent: 15,
+      moonTakeProfit,
+      moonTpPercent: MOON_TP_PERCENT,
+      tpPercent: QUICK_TP_PERCENT,
+      slPercent: QUICK_SL_PERCENT,
       freshFromLow: this._round(freshFromLow, 2),
       distanceFromHigh: this._round(distanceFromHigh, 2),
       priceChange24h: this._round(priceChange24h, 2),
@@ -107,8 +116,8 @@ class PumpHunterEngine {
       breakout,
       summary: `fresh +${this._round(freshFromLow, 1)}% from low, volume x${this._round(volumeBoost, 1)}`,
       reasons: this._buildReasons({ freshFromLow, volumeBoost, turnover24h, priceChange24h, breakout }),
-      risks: this._buildRisks({ freshFromLow, distanceFromHigh, volumeBoost, turnover24h }),
-      invalidationRule: `Сценарий отменяется ниже $${stopLoss} (-15%)`,
+      risks: this._buildRisks({ freshFromLow, distanceFromHigh, volumeBoost, turnover24h, breakout }),
+      invalidationRule: `Сценарий отменяется ниже $${stopLoss} (-${QUICK_SL_PERCENT}%)`,
     };
   }
 
@@ -121,6 +130,8 @@ class PumpHunterEngine {
       entryPrice: candidate.entryPrice,
       stopLoss: candidate.stopLoss,
       takeProfit: candidate.takeProfit,
+      moonTakeProfit: candidate.moonTakeProfit,
+      moonTpPercent: candidate.moonTpPercent,
       tpPercent: candidate.tpPercent,
       slPercent: candidate.slPercent,
       riskReward: candidate.riskReward,
@@ -218,9 +229,10 @@ class PumpHunterEngine {
   static _buildRisks(context) {
     const risks = [];
     if (context.freshFromLow > MAX_FRESH_FROM_LOW) risks.push(`уже далеко от дна: +${this._round(context.freshFromLow, 1)}%`);
-    if (context.distanceFromHigh > 20) risks.push(`далеко от high: -${this._round(context.distanceFromHigh, 1)}%`);
+    if (context.distanceFromHigh > MAX_DISTANCE_FROM_HIGH) risks.push(`далеко от high: -${this._round(context.distanceFromHigh, 1)}%`);
     if (context.volumeBoost < MIN_VOLUME_BOOST) risks.push(`volume x${this._round(context.volumeBoost, 1)} слабее ${MIN_VOLUME_BOOST}`);
     if (context.turnover24h < MIN_TURNOVER_24H) risks.push('ликвидность ниже фильтра');
+    if (!context.breakout) risks.push('нет подтверждённого пробоя previous high');
     return risks.length ? risks : ['главный риск: поздний вход после импульса'];
   }
 
@@ -242,7 +254,7 @@ class PumpHunterEngine {
   static _scoreFreshMove(value) {
     if (value < 10) return 0;
     if (value < MIN_FRESH_FROM_LOW) return 12;
-    if (value <= 45) return 24;
+    if (value <= 35) return 24;
     if (value <= MAX_FRESH_FROM_LOW) return 18;
     return 6;
   }
@@ -255,8 +267,8 @@ class PumpHunterEngine {
   }
 
   static _scoreTurnover(value) {
-    if (value >= 10000000) return 14;
-    if (value >= 3000000) return 10;
+    if (value >= 20000000) return 14;
+    if (value >= 10000000) return 10;
     if (value >= MIN_TURNOVER_24H) return 6;
     return 0;
   }

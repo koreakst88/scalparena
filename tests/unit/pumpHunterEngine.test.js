@@ -81,8 +81,9 @@ const okxFallbackReportsPromise = PumpHunterEngine.scan({
   const okxFallbackReports = await okxFallbackReportsPromise;
 
   const checks = [
-    { name: 'Fresh pump becomes TRADE', pass: strong.action === 'TRADE' && strong.score >= 70 },
-    { name: 'Pump signal uses +20/-15 levels', pass: strong.tpPercent === 20 && strong.slPercent === 15 },
+    { name: 'Fresh pump becomes TRADE only at strict score', pass: strong.action === 'TRADE' && strong.score >= 80 },
+    { name: 'Pump signal uses quick +8/-6 levels', pass: strong.tpPercent === 8 && strong.slPercent === 6 },
+    { name: 'Pump signal keeps +20 moon target as analytics level', pass: strong.moonTpPercent === 20 && strong.moonTakeProfit > strong.takeProfit },
     { name: 'Weak move is not actionable', pass: weak.action !== 'TRADE' },
     { name: 'Too extended pump is not actionable', pass: extended.action !== 'TRADE' },
     { name: 'Paper signal shape is PUMP_HUNTER', pass: paperSignal.strategy === 'PUMP_HUNTER' && paperSignal.type === 'LONG' },
