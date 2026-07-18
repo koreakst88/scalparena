@@ -935,7 +935,9 @@ ${insights}`
     }
 
     if (options.mode === 'edge') {
-      await this._sendPlainChunks(userId, PaperSignalStats.formatEdge(projectSignals, title));
+      await this._sendPlainChunks(userId, PaperSignalStats.formatEdge(projectSignals, title, {
+        balance: user.account_balance || 200,
+      }));
       return;
     }
 

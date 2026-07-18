@@ -74,9 +74,10 @@ class PumpHunterFormatter {
 
     return [
       `${index}. ${report.pair} LONG | ${status}`,
-      `Pump score ${report.score}/100 | RR ${report.riskReward}`,
-      `Вход $${report.entryPrice} | TP $${report.takeProfit} (+${report.tpPercent}%) | SL $${report.stopLoss} (-${report.slPercent}%)`,
-      `Moon TP $${report.moonTakeProfit} (+${report.moonTpPercent || 20}%) — только как бонус-уровень`,
+      `Pump score ${report.score}/100 | RR ${report.riskReward} | ${report.exitProfile || 'dynamic'}`,
+      `Вход $${report.entryPrice} | Main TP $${report.takeProfit} (+${report.tpPercent}%) | SL $${report.stopLoss} (-${report.slPercent}%)`,
+      `TP1 $${report.tp1} (+${report.tp1Percent || 2}%) | TP2 $${report.tp2} (+${report.tp2Percent || 3}%) | Stretch $${report.stretchTakeProfit} (+${report.stretchTpPercent || 8}%)`,
+      `Moon TP $${report.moonTakeProfit} (+${report.moonTpPercent || 20}%) — только бонус`,
       `Fresh +${report.freshFromLow}% от low | 24h ${this._signed(report.priceChange24h)}% | volume x${report.volumeBoost}`,
       `Turnover 24h $${this._formatMoney(report.turnover24h)} | от high -${report.distanceFromHigh}%`,
       `Решение: ${report.summary}`,

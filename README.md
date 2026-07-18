@@ -80,9 +80,9 @@ Telegram команды:
 - `/pump full` - подробная диагностика
 - `/pump paper` - записать готовые pump-входы в paper tracking
 - `/pump debug` - проверить доступ к Bybit public REST
-- `/signals pump edge 7` - посмотреть MFE/плюсовые движения PumpHunter
+- `/signals pump edge 7` - посмотреть MFE/плюсовые движения PumpHunter и money model
 
-Логика v2: ищем монеты, которые уже дали fresh move от локального low, но еще не выглядят слишком поздними. Основной paper TP +8%, SL -6%, moon level +20% считается отдельно как аналитический бонус-уровень. Live Bybit orders OFF.
+Логика v3: ищем монеты, которые уже дали fresh move от локального low, но еще не выглядят слишком поздними. PumpHunter строит динамический exit plan: TP1 +2%, TP2 +3%, main TP +3/+5/+8% по силе сетапа, SL -4/-5/-6%, moon level +20% считается отдельно как бонус-уровень. `/signals pump edge` считает MFE-потенциал и денежную модель по текущему балансу, margin/leverage из RiskManager, комиссии включены. Live Bybit orders OFF.
 
 ## Deployment
 

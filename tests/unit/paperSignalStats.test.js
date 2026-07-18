@@ -72,7 +72,7 @@ const pumpSignals = PaperSignalStats.filterByProject(signals, 'pump');
 const candidateSignals = PaperSignalStats.filterByProject(signals, 'candidates');
 const watchingMessage = PaperSignalStats.formatWatching(pumpSignals, 'последние 7 дн. | PumpHunter');
 const detailMessage = PaperSignalStats.formatDetail(candidateSignals, 'последние 7 дн. | Candidate Engine');
-const edgeMessage = PaperSignalStats.formatEdge(pumpSignals, 'последние 7 дн. | PumpHunter');
+const edgeMessage = PaperSignalStats.formatEdge(pumpSignals, 'последние 7 дн. | PumpHunter', { balance: 200 });
 
 console.log(message);
 
@@ -93,6 +93,7 @@ const checks = [
   { name: 'watching message lists active pump signal', pass: watchingMessage.includes('HUSDT') && watchingMessage.includes('PUMP_AUTO') },
   { name: 'detail message includes MFE/MAE diagnostics', pass: detailMessage.includes('PAPER DETAIL') && detailMessage.includes('Avg MFE') },
   { name: 'edge message includes MFE thresholds', pass: edgeMessage.includes('PAPER EDGE') && edgeMessage.includes('>=5% MFE') && edgeMessage.includes('MFE пороги') },
+  { name: 'edge message includes money model', pass: edgeMessage.includes('margin $10') && edgeMessage.includes('leverage 10x') && edgeMessage.includes('net $') },
 ];
 
 console.log('\n🎯 Final checks:');

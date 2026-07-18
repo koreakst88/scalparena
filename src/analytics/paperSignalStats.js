@@ -1,3 +1,6 @@
+const RiskManager = require('../engine/riskManager');
+const FeeCalculator = require('../engine/feeCalculator');
+
 class PaperSignalStats {
   static filterByProject(signals = [], project = 'all') {
     const normalized = String(project || 'all').toLowerCase();
@@ -162,7 +165,7 @@ class PaperSignalStats {
     return lines.join('\n');
   }
 
-  static formatEdge(signals = [], title = 'период') {
+  static formatEdge(signals = [], title = 'период', options = {}) {
     if (!signals.length) {
       return `📭 PAPER EDGE\n\nЗа ${title} сигналов пока нет.`;
     }
@@ -175,6 +178,7 @@ class PaperSignalStats {
     const positive = enriched.filter((signal) => Number.isFinite(signal.mfePercent) && signal.mfePercent > 0);
     const strong = enriched.filter((signal) => Number.isFinite(signal.mfePercent) && signal.mfePercent >= 5);
     const moon = enriched.filter((signal) => Number.isFinite(signal.mfePercent) && signal.mfePercent >= 20);
+    const moneyModel = this._buildMoneyModel(enriched, options);
     const lines = [
       '📈 PAPER EDGE',
       '════════════════════════════════',
@@ -195,6 +199,9 @@ class PaperSignalStats {
       const count = enriched.filter((signal) => Number.isFinite(signal.mfePercent) && signal.mfePercent >= threshold).length;
       lines.push(`>=${threshold}%: ${count}/${signals.length} (${this._formatPercent(this._rate(count, signals.length))})`);
     });
+
+    lines.push('', '💵 Potential by MFE:');
+    lines.push(...this._formatVirtualTpRows(enriched, moneyModel));
 
     lines.push('', '🏆 Лучшие движения:');
     lines.push(...this._formatEdgeSignals(enriched.slice().sort((a, b) => (b.mfePercent || 0) - (a.mfePercent || 0)).slice(0, 7)));
@@ -306,6 +313,87 @@ class PaperSignalStats {
       `${index + 1}. ${signal.pair} ${signal.status} | MFE ${this._formatPercent(signal.mfePercent)} | ` +
       `MAE ${this._formatPercent(signal.maePercent)} | TPp ${this._formatPercent(signal.tpProgress)}`
     ));
+  }
+
+  static _formatVirtualTpRows(signals, moneyModel) {
+    const levels = [2, 3, 5, 8];
+    const lines = [];
+
+    if (moneyModel) {
+      lines.push(
+        `Модель: баланс $${moneyModel.balance} | margin $${moneyModel.margin} | leverage ${moneyModel.leverage}x | notional $${moneyModel.notional}`
+      );
+    } else {
+      lines.push('Модель: только %; баланс пользователя недоступен');
+    }
+
+    lines.push('Важно: это MFE-потенциал, не точный first-hit порядок.');
+
+    levels.forEach((level) => {
+      const hitCount = signals.filter((signal) => Number.isFinite(signal.mfePercent) && signal.mfePercent >= level).length;
+      const hitRate = this._formatPercent(this._rate(hitCount, signals.length));
+      const pnl = moneyModel ? this._calculateVirtualPnl(signals, level, moneyModel) : null;
+      const money = pnl
+        ? ` | net $${pnl.netPnl} | avg $${pnl.avgPnl}`
+        : '';
+
+      lines.push(`TP +${level}%: ${hitCount}/${signals.length} (${hitRate})${money}`);
+    });
+
+    return lines;
+  }
+
+  static _buildMoneyModel(signals, options = {}) {
+    const balance = Number(options.balance);
+    if (!Number.isFinite(balance) || balance <= 0) return null;
+
+    const margin = RiskManager.getMargin(balance);
+    const leverage = RiskManager.getLeverage(balance);
+
+    return {
+      balance: this._round(balance, 2),
+      margin,
+      leverage,
+      notional: margin * leverage,
+    };
+  }
+
+  static _calculateVirtualPnl(signals, targetPercent, moneyModel) {
+    const values = signals.map((signal) => {
+      const entry = Number(signal.entry_price);
+      if (!Number.isFinite(entry) || entry <= 0) return 0;
+
+      const direction = signal.direction || 'LONG';
+      let exitPrice;
+
+      if (Number.isFinite(signal.mfePercent) && signal.mfePercent >= targetPercent) {
+        exitPrice = direction === 'SHORT'
+          ? entry * (1 - targetPercent / 100)
+          : entry * (1 + targetPercent / 100);
+      } else if (signal.status === 'SL_HIT' && Number.isFinite(Number(signal.stop_loss))) {
+        exitPrice = Number(signal.stop_loss);
+      } else if (Number.isFinite(Number(signal.hit_price))) {
+        exitPrice = Number(signal.hit_price);
+      } else {
+        exitPrice = entry;
+      }
+
+      return FeeCalculator.calculatePnL({
+        entryPrice: entry,
+        exitPrice,
+        margin: moneyModel.margin,
+        leverage: moneyModel.leverage,
+        direction,
+      }).netPnl;
+    });
+
+    const total = values.reduce((sum, value) => sum + value, 0);
+    const avg = values.length ? total / values.length : 0;
+
+    return {
+      netPnl: this._round(total, 2),
+      avgPnl: this._round(avg, 2),
+    };
   }
 
   static _enrichSignal(signal) {

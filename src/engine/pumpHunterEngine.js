@@ -7,8 +7,11 @@ const MAX_FRESH_FROM_LOW = 40;
 const MIN_VOLUME_BOOST = 2;
 const MIN_TURNOVER_24H = 5000000;
 const MAX_DISTANCE_FROM_HIGH = 5;
-const QUICK_TP_PERCENT = 8;
-const QUICK_SL_PERCENT = 6;
+const TP1_PERCENT = 2;
+const TP2_PERCENT = 3;
+const BASE_TP_PERCENT = 5;
+const STRETCH_TP_PERCENT = 8;
+const BASE_SL_PERCENT = 5;
 const MOON_TP_PERCENT = 20;
 
 class PumpHunterEngine {
@@ -89,8 +92,17 @@ class PumpHunterEngine {
     ) ? 'TRADE' : 'WATCH';
 
     const entryPrice = this._round(current, 8);
-    const stopLoss = this._round(current * (1 - QUICK_SL_PERCENT / 100), 8);
-    const takeProfit = this._round(current * (1 + QUICK_TP_PERCENT / 100), 8);
+    const exitPlan = this._buildExitPlan({
+      score,
+      freshFromLow,
+      volumeBoost,
+      distanceFromHigh,
+    });
+    const stopLoss = this._round(current * (1 - exitPlan.slPercent / 100), 8);
+    const takeProfit = this._round(current * (1 + exitPlan.mainTpPercent / 100), 8);
+    const tp1 = this._round(current * (1 + exitPlan.tp1Percent / 100), 8);
+    const tp2 = this._round(current * (1 + exitPlan.tp2Percent / 100), 8);
+    const stretchTakeProfit = this._round(current * (1 + exitPlan.stretchTpPercent / 100), 8);
     const moonTakeProfit = this._round(current * (1 + MOON_TP_PERCENT / 100), 8);
 
     return {
@@ -100,14 +112,21 @@ class PumpHunterEngine {
       strategy: 'PUMP_HUNTER',
       entryMode: 'FRESH_PUMP_CONTINUATION',
       score,
-      riskReward: this._round(QUICK_TP_PERCENT / QUICK_SL_PERCENT, 2),
+      exitProfile: exitPlan.profile,
+      riskReward: this._round(exitPlan.mainTpPercent / exitPlan.slPercent, 2),
       entryPrice,
       stopLoss,
       takeProfit,
+      tp1,
+      tp2,
+      stretchTakeProfit,
       moonTakeProfit,
       moonTpPercent: MOON_TP_PERCENT,
-      tpPercent: QUICK_TP_PERCENT,
-      slPercent: QUICK_SL_PERCENT,
+      tp1Percent: exitPlan.tp1Percent,
+      tp2Percent: exitPlan.tp2Percent,
+      stretchTpPercent: exitPlan.stretchTpPercent,
+      tpPercent: exitPlan.mainTpPercent,
+      slPercent: exitPlan.slPercent,
       freshFromLow: this._round(freshFromLow, 2),
       distanceFromHigh: this._round(distanceFromHigh, 2),
       priceChange24h: this._round(priceChange24h, 2),
@@ -117,7 +136,7 @@ class PumpHunterEngine {
       summary: `fresh +${this._round(freshFromLow, 1)}% from low, volume x${this._round(volumeBoost, 1)}`,
       reasons: this._buildReasons({ freshFromLow, volumeBoost, turnover24h, priceChange24h, breakout }),
       risks: this._buildRisks({ freshFromLow, distanceFromHigh, volumeBoost, turnover24h, breakout }),
-      invalidationRule: `Сценарий отменяется ниже $${stopLoss} (-${QUICK_SL_PERCENT}%)`,
+      invalidationRule: `Сценарий отменяется ниже $${stopLoss} (-${exitPlan.slPercent}%)`,
     };
   }
 
@@ -130,8 +149,14 @@ class PumpHunterEngine {
       entryPrice: candidate.entryPrice,
       stopLoss: candidate.stopLoss,
       takeProfit: candidate.takeProfit,
+      tp1: candidate.tp1,
+      tp2: candidate.tp2,
+      stretchTakeProfit: candidate.stretchTakeProfit,
       moonTakeProfit: candidate.moonTakeProfit,
       moonTpPercent: candidate.moonTpPercent,
+      tp1Percent: candidate.tp1Percent,
+      tp2Percent: candidate.tp2Percent,
+      stretchTpPercent: candidate.stretchTpPercent,
       tpPercent: candidate.tpPercent,
       slPercent: candidate.slPercent,
       riskReward: candidate.riskReward,
@@ -144,6 +169,7 @@ class PumpHunterEngine {
       confidence: candidate.score,
       strategy: candidate.strategy,
       entryMode: candidate.entryMode,
+      exitProfile: candidate.exitProfile,
       marketRegime: 'PUMP_MOMENTUM',
       setupReason: candidate.summary,
       invalidationRule: candidate.invalidationRule,
@@ -234,6 +260,31 @@ class PumpHunterEngine {
     if (context.turnover24h < MIN_TURNOVER_24H) risks.push('ликвидность ниже фильтра');
     if (!context.breakout) risks.push('нет подтверждённого пробоя previous high');
     return risks.length ? risks : ['главный риск: поздний вход после импульса'];
+  }
+
+  static _buildExitPlan(context) {
+    let mainTpPercent = BASE_TP_PERCENT;
+    let slPercent = BASE_SL_PERCENT;
+    let profile = 'balanced';
+
+    if (context.score >= 92 && context.volumeBoost >= 4 && context.distanceFromHigh <= 2 && context.freshFromLow <= 35) {
+      mainTpPercent = STRETCH_TP_PERCENT;
+      slPercent = 6;
+      profile = 'stretch';
+    } else if (context.score < 86 || context.distanceFromHigh > 3.5 || context.volumeBoost < 2.5) {
+      mainTpPercent = TP2_PERCENT;
+      slPercent = 4;
+      profile = 'quick';
+    }
+
+    return {
+      profile,
+      tp1Percent: TP1_PERCENT,
+      tp2Percent: TP2_PERCENT,
+      mainTpPercent,
+      stretchTpPercent: STRETCH_TP_PERCENT,
+      slPercent,
+    };
   }
 
   static _buildNoTrade(pair, score, reason) {
