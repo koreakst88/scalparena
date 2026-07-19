@@ -13,7 +13,7 @@ const commands = ScalpArenaBot.BOT_COMMANDS.map((item) => item.command);
 const checks = [
   {
     name: 'Visible Telegram menu contains only primary commands',
-    pass: commands.join(',') === 'menu,candidates,pump,signals,status,help',
+    pass: commands.join(',') === 'menu,candidates,pump,signals,research,status,help',
   },
   {
     name: 'Legacy commands stay out of the visible Telegram menu',
@@ -27,6 +27,10 @@ const checks = [
     name: 'Main menu exposes current results, archive and active signals',
     pass: ['menu_signals_current', 'menu_signals_legacy', 'menu_signals_open']
       .every((callback) => callbacks.includes(callback)),
+  },
+  {
+    name: 'Main menu exposes research readiness without hiding system status',
+    pass: callbacks.includes('menu_research') && callbacks.includes('menu_status'),
   },
   {
     name: 'Runtime auto states are reflected in button labels',

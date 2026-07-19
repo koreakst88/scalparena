@@ -16,6 +16,7 @@ const PaperSignalTracker = require('../engine/paperSignalTracker');
 const GptAnalyzer = require('../analytics/gptAnalyzer');
 const StatsCalculator = require('../analytics/stats');
 const PaperSignalStats = require('../analytics/paperSignalStats');
+const ResearchReadiness = require('../analytics/researchReadiness');
 const CandidateFormatter = require('../analytics/candidateFormatter');
 const PumpHunterFormatter = require('../analytics/pumpHunterFormatter');
 const { formatDetailedAnalytics } = require('../analytics/formatters');
@@ -59,6 +60,7 @@ const BOT_COMMANDS = [
   { command: 'candidates', description: 'Candidate Engine' },
   { command: 'pump', description: 'PumpHunter Lab' },
   { command: 'signals', description: 'Paper результаты' },
+  { command: 'research', description: 'Готовность исследования' },
   { command: 'status', description: 'Состояние системы' },
   { command: 'help', description: 'Короткая справка' },
 ];
@@ -147,6 +149,7 @@ class ScalpArenaBot {
     this.bot.onText(/\/pump_?auto(?:\s+(\S+))?/, this._safe((msg, match) => this._onPumpAuto(msg, match)));
     this.bot.onText(/\/pump(?:\s+(\S+))?$/, this._safe((msg) => this._onPump(msg)));
     this.bot.onText(/\/signals/, this._safe((msg) => this._onSignals(msg)));
+    this.bot.onText(/\/research(?:@\w+)?$/, this._safe((msg) => this._onResearch(msg)));
     this.bot.onText(/\/signal_stats/, this._safe((msg) => this._onSignals(msg)));
     this.bot.onText(/\/patterns/, this._safe((msg) => this._onPatterns(msg)));
     this.bot.onText(/\/deposit (.+)/, this._safe((msg, match) => this._onDeposit(msg, match)));
@@ -262,6 +265,9 @@ class ScalpArenaBot {
         ],
         [
           { text: '👀 Активные', callback_data: 'menu_signals_open' },
+          { text: '🔬 Исследование', callback_data: 'menu_research' },
+        ],
+        [
           { text: '⚙️ Статус', callback_data: 'menu_status' },
         ],
       ],
@@ -983,6 +989,28 @@ ${insights}`
     await this._sendPaperSignalStats(userId, parts.slice(1), user);
   }
 
+  async _onResearch(msg) {
+    const userId = String(msg.chat.id);
+    const user = await this.db.getUser(userId);
+    if (!user) return this._send(userId, '❌ Сначала /start');
+
+    return this._sendResearchReadiness(userId);
+  }
+
+  async _sendResearchReadiness(userId) {
+    const signals = await this.db.getPaperSignalsSince(userId, new Date(0));
+    const currentSignals = PaperSignalStats.filterByExperiment(
+      signals,
+      'current',
+      CURRENT_PAPER_EXPERIMENT_ID
+    );
+    const readiness = ResearchReadiness.calculate(currentSignals, {
+      experimentId: CURRENT_PAPER_EXPERIMENT_ID,
+    });
+
+    await this._sendPlain(userId, ResearchReadiness.format(readiness));
+  }
+
   async _sendPaperSignalStats(userId, args = [], user = null) {
     const options = this._parsePaperSignalStatsArgs(args);
     const period = this._parseStatsPeriod(options.period);
@@ -1442,12 +1470,15 @@ ${insights}`
 /candidates — Candidate Engine сейчас
 /pump — PumpHunter сейчас
 /signals 7 — результаты текущего эксперимента
+/research — готовность выборки V2
 /status — автопоиск, наблюдения и режимы
 
 Раздельные отчёты:
 /signals candidates 7
 /signals pump 7
 /signals pump edge 7
+/signals candidate_v2 detail 30
+/signals pump_v2 detail 30
 /signals open candidates
 /signals open pump
 
@@ -1514,6 +1545,10 @@ Live-сделки на Bybit отключены. Бот собирает и пр
 
     if (data === 'menu_signals_open') {
       return this._sendPaperSignalStats(userId, ['open', '7']);
+    }
+
+    if (data === 'menu_research') {
+      return this._sendResearchReadiness(userId);
     }
 
     if (data === 'menu_status') {
