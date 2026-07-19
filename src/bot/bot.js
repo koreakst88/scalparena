@@ -911,12 +911,13 @@ ${insights}`
     if (!user) return this._send(userId, '❌ Сначала /start');
 
     const parts = this._getCommandParts(msg.text);
-    await this._sendPaperSignalStats(userId, parts.slice(1));
+    await this._sendPaperSignalStats(userId, parts.slice(1), user);
   }
 
-  async _sendPaperSignalStats(userId, args = []) {
+  async _sendPaperSignalStats(userId, args = [], user = null) {
     const options = this._parsePaperSignalStatsArgs(args);
     const period = this._parseStatsPeriod(options.period);
+    const statsUser = user || await this.db.getUser(userId);
     const signals = await this.db.getPaperSignalsSince(userId, period.since);
     const projectSignals = PaperSignalStats.filterByProject(signals, options.project);
     const title = this._formatPaperSignalStatsTitle(
@@ -936,7 +937,7 @@ ${insights}`
 
     if (options.mode === 'edge') {
       await this._sendPlainChunks(userId, PaperSignalStats.formatEdge(projectSignals, title, {
-        balance: user.account_balance || 200,
+        balance: statsUser?.account_balance || 200,
       }));
       return;
     }
