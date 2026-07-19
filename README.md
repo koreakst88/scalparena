@@ -18,7 +18,7 @@
 
 Alert-only режим для проверки качества сигналов без открытия сделок на Bybit.
 
-1. Применить миграции `supabase/migrations/20260627000000_add_paper_signals.sql` и `supabase/migrations/20260719000000_add_paper_signal_experiments.sql`
+1. Применить миграции из `supabase/migrations`, включая experiment, project isolation и candle-path resolution миграции от `20260719`
 2. Включить флаги:
 
 ```env
@@ -33,6 +33,8 @@ PAPER_SIGNAL_EXPERIMENT_ID=SCALPARENA_V2_20260719
 Старые записи сохраняются как `LEGACY_PRE_20260719`. Новые paper-сигналы получают отдельные `project`, `experiment_id`, версию стратегии, источник рынка, timeframe и параметры динамического выхода.
 
 Candidate Engine и PumpHunter изолированы по `project` и `experiment_id`: активный сигнал одного проекта не блокирует такую же пару в другом проекте. Защита от повторных активных сигналов продолжает действовать внутри каждого проекта.
+
+Paper tracker проверяет OHLC-путь после входа и использует `high/low` свечей для TP, SL, MFE и MAE. Если одна свеча пересекла оба уровня, порядок считается неоднозначным и консервативно записывается `SL_HIT`. Источник свечей соответствует сохранённому `market_source`; snapshot текущей цены остаётся резервным способом проверки.
 
 ## Candidate Engine
 
