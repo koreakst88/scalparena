@@ -60,6 +60,8 @@ CANDIDATE_AUTO_MIN_SCORE=75
 CANDIDATE_AUTO_MIN_RR=1.2
 CANDIDATE_AUTO_COOLDOWN_MINUTES=90
 CANDIDATE_AUTO_MAX_ALERTS=2
+CANDIDATE_V2_SHADOW_ENABLED=true
+CANDIDATE_V2_SHADOW_MAX_PER_CYCLE=3
 ```
 
 Telegram команды:
@@ -70,6 +72,8 @@ Telegram команды:
 - `/candidateauto on/off/status` - короткий alias без underscore
 
 Антиспам-фильтры: отправляются только готовые входы, пары с активным paper-сигналом пропускаются, по каждой паре действует cooldown.
+
+Candidate Breakout V2 работает параллельно в silent shadow-режиме. Он использует только подтверждённые WebSocket-свечи с реальным объёмом, проверяет настоящий пробой и удержание диапазона и сохраняет результаты отдельно. Он не меняет V1, не отправляет Telegram-алерты и доступен через `/signals candidate_v2 7`.
 
 ## PumpHunter Lab
 

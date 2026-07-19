@@ -24,6 +24,13 @@ const checks = [
     pass: getPaperProject({ strategy: 'TREND_PULLBACK' }, 'MANUAL_SCAN') === 'HYBRID',
   },
   {
+    name: 'Candidate V2 shadow has an isolated project and version',
+    pass: getPaperProject({ strategy: 'BREAKOUT_V2_SHADOW' }, 'CANDIDATE_V2_SHADOW') ===
+      'CANDIDATE_V2_SHADOW' &&
+      getPaperStrategyVersion({ strategy: 'BREAKOUT_V2_SHADOW' }) ===
+      'candidate_breakout_v2_shadow',
+  },
+  {
     name: 'Each paper strategy gets an explicit version',
     pass: getPaperStrategyVersion({ strategy: 'BREAKOUT' }) === 'candidate_breakout_v1' &&
       getPaperStrategyVersion({ strategy: 'PUMP_HUNTER' }) === 'pump_continuation_v2_dynamic_exits',

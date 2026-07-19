@@ -4,18 +4,24 @@ const LEGACY_PAPER_EXPERIMENT_ID = 'LEGACY_PRE_20260719';
 
 const PAPER_PROJECTS = {
   CANDIDATE: 'CANDIDATE',
+  CANDIDATE_V2_SHADOW: 'CANDIDATE_V2_SHADOW',
   PUMP: 'PUMP',
   HYBRID: 'HYBRID',
 };
 
 const PAPER_STRATEGY_VERSIONS = {
   BREAKOUT: 'candidate_breakout_v1',
+  BREAKOUT_V2_SHADOW: 'candidate_breakout_v2_shadow',
   TREND_PULLBACK: 'candidate_trend_pullback_v1_tightened',
   MEAN_REVERSION: 'candidate_mean_reversion_v1_restricted',
   PUMP_HUNTER: 'pump_continuation_v2_dynamic_exits',
 };
 
 function getPaperProject(signal = {}, source = '') {
+  if (signal.strategy === 'BREAKOUT_V2_SHADOW' || source === 'CANDIDATE_V2_SHADOW') {
+    return PAPER_PROJECTS.CANDIDATE_V2_SHADOW;
+  }
+
   if (signal.strategy === 'PUMP_HUNTER' || ['PUMP_HUNTER', 'PUMP_AUTO'].includes(source)) {
     return PAPER_PROJECTS.PUMP;
   }

@@ -102,6 +102,17 @@ const persistenceTracker = new PaperSignalTracker(
     getCandles: () => [tpCandle],
   }
 );
+let shadowAlerts = 0;
+const shadowTracker = new PaperSignalTracker(
+  { _sendPlain: async () => { shadowAlerts += 1; } },
+  {
+    updatePaperSignal: async () => {},
+  },
+  {
+    getCurrentCandle: () => ({ close: 105 }),
+    getCandles: () => [tpCandle],
+  }
+);
 
 Promise.resolve()
   .then(async () => {
@@ -121,6 +132,15 @@ Promise.resolve()
       user_id: '42',
       pair: 'TESTUSDT',
       strategy: 'BREAKOUT',
+    });
+    await shadowTracker._checkSignal({
+      ...pathSignal,
+      id: 'shadow-1',
+      user_id: '42',
+      pair: 'TESTUSDT',
+      project: 'CANDIDATE_V2_SHADOW',
+      strategy: 'BREAKOUT_V2_SHADOW',
+      source: 'CANDIDATE_V2_SHADOW',
     });
 
     const checks = [
@@ -186,6 +206,10 @@ Promise.resolve()
       persistedOutcome?.resolution_method === 'CANDLE_PATH' &&
       persistedOutcome?.resolved_candle_high === 101.2 &&
       persistedOutcome?.max_favorable_price === 101.2,
+  },
+  {
+    name: 'Shadow outcomes are tracked without Telegram alerts',
+    pass: shadowAlerts === 0,
   },
     ];
 

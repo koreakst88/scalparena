@@ -6,6 +6,7 @@ const bot = Object.create(ScalpArenaBot.prototype);
 const current = bot._parsePaperSignalStatsArgs(['pump', 'edge', '7']);
 const legacy = bot._parsePaperSignalStatsArgs(['legacy', 'candidates', '30']);
 const history = bot._parsePaperSignalStatsArgs(['history', 'pump', 'all']);
+const shadow = bot._parsePaperSignalStatsArgs(['candidate_v2', 'detail', '7']);
 
 const checks = [
   {
@@ -23,6 +24,10 @@ const checks = [
   {
     name: 'Current title is explicit',
     pass: bot._formatPaperSignalStatsTitle('7 дней', 'pump', 'current').includes('текущий эксперимент'),
+  },
+  {
+    name: 'Shadow report has an isolated project selector',
+    pass: shadow.project === 'candidate_v2' && shadow.mode === 'detail' && shadow.period === '7',
   },
   {
     name: 'Legacy title is explicit',

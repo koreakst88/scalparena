@@ -24,6 +24,14 @@ class PaperSignalStats {
   static filterByProject(signals = [], project = 'all') {
     const normalized = String(project || 'all').toLowerCase();
 
+    if (['candidate_v2', 'candidates_v2', 'shadow'].includes(normalized)) {
+      return signals.filter((signal) => (
+        signal.project === 'CANDIDATE_V2_SHADOW' ||
+        signal.strategy === 'BREAKOUT_V2_SHADOW' ||
+        signal.source === 'CANDIDATE_V2_SHADOW'
+      ));
+    }
+
     if (normalized === 'pump') {
       return signals.filter((signal) => (
         signal.project === 'PUMP' ||
@@ -46,7 +54,11 @@ class PaperSignalStats {
       ));
     }
 
-    return signals;
+    return signals.filter((signal) => (
+      signal.project !== 'CANDIDATE_V2_SHADOW' &&
+      signal.strategy !== 'BREAKOUT_V2_SHADOW' &&
+      signal.source !== 'CANDIDATE_V2_SHADOW'
+    ));
   }
 
   static calculate(signals = [], options = {}) {

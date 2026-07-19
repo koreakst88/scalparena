@@ -47,6 +47,8 @@ const {
   CANDIDATE_AUTO_MIN_RR,
   CANDIDATE_AUTO_COOLDOWN_MINUTES,
   CANDIDATE_AUTO_MAX_ALERTS,
+  CANDIDATE_V2_SHADOW_ENABLED,
+  CANDIDATE_V2_SHADOW_MAX_PER_CYCLE,
 } = require('../config/paperSignals');
 
 const BOT_COMMANDS = [
@@ -483,6 +485,7 @@ ${paperSignal ? '\n🧪 Paper signal записан для отслеживан�
       CURRENT_PAPER_EXPERIMENT_ID
     );
     const candidateCount = PaperSignalStats.filterByProject(currentSignals, 'candidates').length;
+    const candidateV2Count = PaperSignalStats.filterByProject(currentSignals, 'candidate_v2').length;
     const pumpCount = PaperSignalStats.filterByProject(currentSignals, 'pump').length;
     const hybridCount = PaperSignalStats.filterByProject(currentSignals, 'hybrid').length;
     const schedulerStatus = this.scheduler?.getStatus?.() || {};
@@ -499,6 +502,7 @@ ${paperSignal ? '\n🧪 Paper signal записан для отслеживан�
       `Paper tracking: ${PAPER_SIGNAL_TRACKING_ENABLED ? 'ON' : 'OFF'}`,
       `Эксперимент: ${CURRENT_PAPER_EXPERIMENT_ID}`,
       `Активные: Candidate ${candidateCount} | Pump ${pumpCount} | Hybrid ${hybridCount}`,
+      `Shadow V2: ${CANDIDATE_V2_SHADOW_ENABLED ? 'ON' : 'OFF'} | активных ${candidateV2Count} | alerts OFF`,
       `Ручные позиции: ${positions?.length || 0}`,
       'Live-сделки на Bybit: OFF',
     ].join('\n');
@@ -1037,6 +1041,8 @@ ${insights}`
         project = 'pump';
       } else if (['candidate', 'candidates'].includes(value)) {
         project = 'candidates';
+      } else if (['candidate_v2', 'candidates_v2', 'shadow'].includes(value)) {
+        project = 'candidate_v2';
       } else if (['hybrid', 'scan'].includes(value)) {
         project = 'hybrid';
       } else if (['current', 'new'].includes(value)) {
@@ -1058,6 +1064,7 @@ ${insights}`
       all: 'все проекты',
       pump: 'PumpHunter',
       candidates: 'Candidate Engine',
+      candidate_v2: 'Candidate Breakout V2 shadow',
       hybrid: 'Hybrid scan',
     }[project] || project;
     const scopeTitle = {
@@ -1298,6 +1305,7 @@ ${insights}`
       `Фильтр: score >= ${CANDIDATE_AUTO_MIN_SCORE}, RR >= ${CANDIDATE_AUTO_MIN_RR}`,
       `Cooldown по паре: ${CANDIDATE_AUTO_COOLDOWN_MINUTES} мин`,
       `Макс алертов за цикл: ${CANDIDATE_AUTO_MAX_ALERTS}`,
+      `Breakout V2 shadow: ${CANDIDATE_V2_SHADOW_ENABLED ? 'ON' : 'OFF'} | max ${CANDIDATE_V2_SHADOW_MAX_PER_CYCLE} записей | alerts OFF`,
       'Live Bybit orders: OFF',
       '',
       'Постоянно включить после redeploy: CANDIDATE_AUTO_SCAN_ENABLED=true в Railway Variables.',
@@ -1898,6 +1906,7 @@ Exit:  \`$${price}\`
       signal_reason: signal.setupReason,
       invalidation_rule: signal.invalidationRule,
       signal_metadata: {
+        ...(signal.signalMetadata || {}),
         riskReward: signal.riskReward ?? null,
         tpPercent: signal.tpPercent ?? null,
         slPercent: signal.slPercent ?? null,

@@ -98,7 +98,9 @@ class PaperSignalTracker {
       resolved_candle_low: outcome.candle?.low ?? null,
     });
 
-    await this._sendOutcome(signal, outcome.status, hitPrice, timeToResult, outcome.ambiguous);
+    if (!this._isSilentShadowSignal(signal)) {
+      await this._sendOutcome(signal, outcome.status, hitPrice, timeToResult, outcome.ambiguous);
+    }
   }
 
   async _getPricePath(pair, signal, now = new Date()) {
@@ -239,6 +241,14 @@ class PaperSignalTracker {
 
   _isPumpHunterSignal(signal) {
     return signal.strategy === 'PUMP_HUNTER' || ['PUMP_HUNTER', 'PUMP_AUTO'].includes(signal.source);
+  }
+
+  _isSilentShadowSignal(signal) {
+    return (
+      signal.project === 'CANDIDATE_V2_SHADOW' ||
+      signal.strategy === 'BREAKOUT_V2_SHADOW' ||
+      signal.source === 'CANDIDATE_V2_SHADOW'
+    );
   }
 
   _calculateExtremes(signal, currentPrice, direction) {

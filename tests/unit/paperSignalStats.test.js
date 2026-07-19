@@ -70,6 +70,18 @@ const stats = PaperSignalStats.calculate(signals);
 const message = PaperSignalStats.format(stats, 'последние 7 дн.');
 const pumpSignals = PaperSignalStats.filterByProject(signals, 'pump');
 const candidateSignals = PaperSignalStats.filterByProject(signals, 'candidates');
+const shadowSourceSignals = [
+  ...signals,
+  {
+    pair: 'SHADOWUSDT',
+    project: 'CANDIDATE_V2_SHADOW',
+    strategy: 'BREAKOUT_V2_SHADOW',
+    source: 'CANDIDATE_V2_SHADOW',
+    status: 'WATCHING',
+  },
+];
+const shadowSignals = PaperSignalStats.filterByProject(shadowSourceSignals, 'candidate_v2');
+const defaultSignals = PaperSignalStats.filterByProject(shadowSourceSignals, 'all');
 const watchingMessage = PaperSignalStats.formatWatching(pumpSignals, 'последние 7 дн. | PumpHunter');
 const detailMessage = PaperSignalStats.formatDetail(candidateSignals, 'последние 7 дн. | Candidate Engine');
 const edgeMessage = PaperSignalStats.formatEdge(pumpSignals, 'последние 7 дн. | PumpHunter', { balance: 200 });
@@ -133,6 +145,8 @@ const checks = [
   { name: 'strategy grouping exists', pass: stats.byStrategy[0].total === 2 },
   { name: 'pump filter keeps only PumpHunter', pass: pumpSignals.length === 1 && pumpSignals[0].pair === 'HUSDT' },
   { name: 'candidate filter keeps Candidate Engine source', pass: candidateSignals.length === 1 && candidateSignals[0].pair === 'KGENUSDT' },
+  { name: 'shadow filter keeps only Candidate V2 research rows', pass: shadowSignals.length === 1 && shadowSignals[0].pair === 'SHADOWUSDT' },
+  { name: 'default reports exclude silent shadow rows', pass: defaultSignals.length === signals.length },
   { name: 'watching message lists active pump signal', pass: watchingMessage.includes('HUSDT') && watchingMessage.includes('PUMP_AUTO') },
   { name: 'detail message includes MFE/MAE diagnostics', pass: detailMessage.includes('PAPER DETAIL') && detailMessage.includes('Avg MFE') },
   { name: 'edge message includes MFE thresholds', pass: edgeMessage.includes('PAPER EDGE') && edgeMessage.includes('>=5% MFE') && edgeMessage.includes('MFE пороги') },

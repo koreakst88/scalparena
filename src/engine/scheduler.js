@@ -2,6 +2,7 @@
 
 const SignalDetector = require('./signalDetector');
 const CandidateEngine = require('./candidateEngine');
+const CandidateBreakoutV2 = require('./candidateBreakoutV2');
 const PumpHunterEngine = require('./pumpHunterEngine');
 const RiskManager = require('./riskManager');
 const {
@@ -13,6 +14,8 @@ const {
   CANDIDATE_AUTO_MIN_RR,
   CANDIDATE_AUTO_COOLDOWN_MINUTES,
   CANDIDATE_AUTO_MAX_ALERTS,
+  CANDIDATE_V2_SHADOW_ENABLED,
+  CANDIDATE_V2_SHADOW_MAX_PER_CYCLE,
 } = require('../config/paperSignals');
 const {
   PUMP_HUNTER_SCAN_LIMIT,
@@ -154,6 +157,7 @@ class Scheduler {
       }
 
       const reports = CandidateEngine.scanAll(this.provider);
+      await this._recordCandidateV2Shadow(enabledUsers);
       const candidates = this._getStrictCandidateAlerts(reports);
 
       if (!candidates.length) {
@@ -221,6 +225,64 @@ class Scheduler {
       .filter((candidate) => candidate.score >= CANDIDATE_AUTO_MIN_SCORE)
       .filter((candidate) => candidate.riskReward >= CANDIDATE_AUTO_MIN_RR)
       .slice(0, CANDIDATE_AUTO_MAX_ALERTS);
+  }
+
+  async _recordCandidateV2Shadow(users = []) {
+    if (!CANDIDATE_V2_SHADOW_ENABLED || !PAPER_SIGNAL_TRACKING_ENABLED) return;
+
+    const reports = CandidateBreakoutV2.scanAll(this.provider);
+    const candidates = CandidateBreakoutV2.getActionableCandidates(
+      reports,
+      CANDIDATE_V2_SHADOW_MAX_PER_CYCLE
+    );
+
+    if (!candidates.length) {
+      console.log(
+        `🔬 Candidate V2 shadow: no qualified breakouts | ${this._formatShadowDiagnostics(reports)}`
+      );
+      return;
+    }
+
+    console.log(`🔬 Candidate V2 shadow: ${candidates.length} qualified setup(s)`);
+
+    for (const user of users) {
+      const userId = String(user.telegram_id);
+      const activeSignals = await this.db.getActivePaperSignals(userId, {
+        project: PAPER_PROJECTS.CANDIDATE_V2_SHADOW,
+        experimentId: CURRENT_PAPER_EXPERIMENT_ID,
+      });
+      const activePairs = new Set(activeSignals.map((signal) => this._normalizePair(signal.pair)));
+      let savedCount = 0;
+
+      for (const candidate of candidates) {
+        if (activePairs.has(this._normalizePair(candidate.pair))) continue;
+
+        const saved = await this.bot._trackPaperSignal(
+          userId,
+          CandidateBreakoutV2.toPaperSignal(candidate),
+          'CANDIDATE_V2_SHADOW'
+        );
+        if (saved) {
+          savedCount += 1;
+          activePairs.add(this._normalizePair(candidate.pair));
+        }
+      }
+
+      console.log(`🔬 Candidate V2 shadow: saved ${savedCount} signal(s) for ${userId}; alerts=OFF`);
+    }
+  }
+
+  _formatShadowDiagnostics(reports = []) {
+    const counts = reports.reduce((result, report) => {
+      const reason = report.reason || 'UNKNOWN';
+      result[reason] = (result[reason] || 0) + 1;
+      return result;
+    }, {});
+
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([reason, count]) => `${reason}=${count}`)
+      .join(', ');
   }
 
   _getStrictPumpAlerts(reports) {
