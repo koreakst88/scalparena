@@ -87,6 +87,7 @@ const okxFallbackReportsPromise = PumpHunterEngine.scan({
     { name: 'Weak move is not actionable', pass: weak.action !== 'TRADE' },
     { name: 'Too extended pump is not actionable', pass: extended.action !== 'TRADE' },
     { name: 'Paper signal shape is PUMP_HUNTER', pass: paperSignal.strategy === 'PUMP_HUNTER' && paperSignal.type === 'LONG' },
+    { name: 'Paper signal keeps dynamic exit context', pass: paperSignal.tp1 > paperSignal.entryPrice && paperSignal.exitProfile },
     { name: 'Actionable filter keeps only strong pump', pass: PumpHunterEngine.getActionable([strong, weak, extended]).length === 1 },
     { name: 'Empty scan shows data unavailable', pass: emptyMessage.includes('Данные Bybit не получены') && !emptyMessage.includes('Проверено: 0') },
     { name: 'Binance fallback is used when Bybit tickers are unavailable', pass: fallbackReports[0]?.marketSource === 'BINANCE_FUTURES_FALLBACK' },

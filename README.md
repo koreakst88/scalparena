@@ -18,16 +18,19 @@
 
 Alert-only режим для проверки качества сигналов без открытия сделок на Bybit.
 
-1. Применить миграцию `supabase/migrations/20260627000000_add_paper_signals.sql`
+1. Применить миграции `supabase/migrations/20260627000000_add_paper_signals.sql` и `supabase/migrations/20260719000000_add_paper_signal_experiments.sql`
 2. Включить флаги:
 
 ```env
 PAPER_SIGNAL_TRACKING_ENABLED=true
 PAPER_SIGNAL_AUTO_LOG_ENABLED=true
 PAPER_SIGNAL_ALERTS_ENABLED=true
+PAPER_SIGNAL_EXPERIMENT_ID=SCALPARENA_V2_20260719
 ```
 
 После этого `/scan` и авто-скан будут записывать paper-сигналы, tracker будет отмечать `TP_HIT`, `SL_HIT` или `TIMEOUT`, а статистику можно смотреть через `/signals 7`, `/signals 30`, `/signals all`.
+
+Старые записи сохраняются как `LEGACY_PRE_20260719`. Новые paper-сигналы получают отдельные `project`, `experiment_id`, версию стратегии, источник рынка, timeframe и параметры динамического выхода.
 
 ## Candidate Engine
 

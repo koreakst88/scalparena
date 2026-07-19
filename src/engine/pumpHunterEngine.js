@@ -170,6 +170,8 @@ class PumpHunterEngine {
       strategy: candidate.strategy,
       entryMode: candidate.entryMode,
       exitProfile: candidate.exitProfile,
+      marketSource: candidate.marketSource,
+      timeframe: candidate.timeframe || DEFAULT_KLINE_INTERVAL,
       marketRegime: 'PUMP_MOMENTUM',
       setupReason: candidate.summary,
       invalidationRule: candidate.invalidationRule,

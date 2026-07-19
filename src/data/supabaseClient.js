@@ -22,6 +22,20 @@ const TRADE_CONTEXT_FIELDS = [
   'volume_spike_percentage',
 ];
 
+const PAPER_EXPERIMENT_FIELDS = [
+  'project',
+  'experiment_id',
+  'is_legacy',
+  'market_source',
+  'timeframe',
+  'exit_profile',
+  'tp1',
+  'tp2',
+  'stretch_take_profit',
+  'moon_take_profit',
+  'signal_metadata',
+];
+
 class SupabaseClient {
   constructor() {
     this.url = process.env.SUPABASE_URL;
@@ -191,8 +205,33 @@ class SupabaseClient {
       return null;
     }
 
+    if (error && this._isMissingPaperExperimentColumnError(error)) {
+      console.warn('⚠️ Paper experiment columns missing, retrying with legacy payload');
+      const legacyPayload = { ...payload };
+      PAPER_EXPERIMENT_FIELDS.forEach((field) => delete legacyPayload[field]);
+
+      const retry = await this.client
+        .from('paper_signals')
+        .insert([legacyPayload])
+        .select()
+        .single();
+
+      if (retry.error?.code === '23505') return null;
+      if (retry.error) throw retry.error;
+      return retry.data;
+    }
+
     if (error) throw error;
     return data;
+  }
+
+  _isMissingPaperExperimentColumnError(error) {
+    const message = String(error?.message || '').toLowerCase();
+    return PAPER_EXPERIMENT_FIELDS.some((field) => message.includes(field.toLowerCase())) && (
+      error?.code === 'PGRST204' ||
+      message.includes('column') ||
+      message.includes('schema cache')
+    );
   }
 
   async getActivePaperSignals(userId = null) {

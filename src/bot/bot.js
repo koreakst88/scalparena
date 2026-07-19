@@ -21,6 +21,11 @@ const PumpHunterFormatter = require('../analytics/pumpHunterFormatter');
 const { formatDetailedAnalytics } = require('../analytics/formatters');
 const { CURRENT_STRATEGY_VERSION, LEGACY_STRATEGY_VERSION } = require('../config/strategy');
 const {
+  CURRENT_PAPER_EXPERIMENT_ID,
+  getPaperProject,
+  getPaperStrategyVersion,
+} = require('../config/paperExperiment');
+const {
   PUMP_HUNTER_SCAN_LIMIT,
   PUMP_HUNTER_KLINE_INTERVAL,
   PUMP_HUNTER_KLINE_LIMIT,
@@ -1764,6 +1769,12 @@ Exit:  \`$${price}\`
       ? PUMP_HUNTER_SIGNAL_TTL_MINUTES
       : PAPER_SIGNAL_TTL_MINUTES;
     const expiresAt = new Date(now.getTime() + ttlMinutes * 60 * 1000);
+    const project = getPaperProject(signal, source);
+    const timeframe = signal.timeframe || (
+      project === 'PUMP'
+        ? PUMP_HUNTER_KLINE_INTERVAL
+        : process.env.BYBIT_WS_INTERVAL || '1'
+    );
 
     return this.db.createPaperSignal(userId, {
       pair: signal.pair,
@@ -1771,10 +1782,20 @@ Exit:  \`$${price}\`
       strategy: signal.strategy,
       entry_mode: signal.entryMode,
       market_regime: signal.marketRegime,
-      strategy_version: CURRENT_STRATEGY_VERSION,
+      strategy_version: getPaperStrategyVersion(signal),
+      project,
+      experiment_id: CURRENT_PAPER_EXPERIMENT_ID,
+      is_legacy: false,
+      market_source: signal.marketSource || (project === 'PUMP' ? 'UNKNOWN_PUBLIC_FALLBACK' : 'BYBIT_WEBSOCKET'),
+      timeframe: String(timeframe),
+      exit_profile: signal.exitProfile || null,
       entry_price: signal.entryPrice,
       stop_loss: signal.stopLoss,
       take_profit: signal.takeProfit,
+      tp1: signal.tp1 || null,
+      tp2: signal.tp2 || null,
+      stretch_take_profit: signal.stretchTakeProfit || null,
+      moon_take_profit: signal.moonTakeProfit || null,
       confidence: signal.confidence,
       rsi: signal.rsi,
       volume: signal.volume,
@@ -1784,6 +1805,15 @@ Exit:  \`$${price}\`
       macd_bias: signal.macdBias,
       signal_reason: signal.setupReason,
       invalidation_rule: signal.invalidationRule,
+      signal_metadata: {
+        riskReward: signal.riskReward ?? null,
+        tpPercent: signal.tpPercent ?? null,
+        slPercent: signal.slPercent ?? null,
+        tp1Percent: signal.tp1Percent ?? null,
+        tp2Percent: signal.tp2Percent ?? null,
+        stretchTpPercent: signal.stretchTpPercent ?? null,
+        moonTpPercent: signal.moonTpPercent ?? null,
+      },
       max_favorable_price: signal.entryPrice,
       max_adverse_price: signal.entryPrice,
       source,
