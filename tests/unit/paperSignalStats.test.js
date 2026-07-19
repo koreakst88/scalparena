@@ -73,6 +73,17 @@ const candidateSignals = PaperSignalStats.filterByProject(signals, 'candidates')
 const watchingMessage = PaperSignalStats.formatWatching(pumpSignals, 'последние 7 дн. | PumpHunter');
 const detailMessage = PaperSignalStats.formatDetail(candidateSignals, 'последние 7 дн. | Candidate Engine');
 const edgeMessage = PaperSignalStats.formatEdge(pumpSignals, 'последние 7 дн. | PumpHunter', { balance: 200 });
+const experimentSignals = [
+  { pair: 'CURRENT', experiment_id: 'SCALPARENA_V2_20260719', is_legacy: false },
+  { pair: 'OLD', experiment_id: 'LEGACY_PRE_20260719', is_legacy: true },
+];
+const currentSignals = PaperSignalStats.filterByExperiment(
+  experimentSignals,
+  'current',
+  'SCALPARENA_V2_20260719'
+);
+const legacySignals = PaperSignalStats.filterByExperiment(experimentSignals, 'legacy');
+const historySignals = PaperSignalStats.filterByExperiment(experimentSignals, 'history');
 
 console.log(message);
 
@@ -94,6 +105,9 @@ const checks = [
   { name: 'detail message includes MFE/MAE diagnostics', pass: detailMessage.includes('PAPER DETAIL') && detailMessage.includes('Avg MFE') },
   { name: 'edge message includes MFE thresholds', pass: edgeMessage.includes('PAPER EDGE') && edgeMessage.includes('>=5% MFE') && edgeMessage.includes('MFE пороги') },
   { name: 'edge message includes money model', pass: edgeMessage.includes('margin $10') && edgeMessage.includes('leverage 10x') && edgeMessage.includes('net $') },
+  { name: 'current experiment excludes legacy rows', pass: currentSignals.length === 1 && currentSignals[0].pair === 'CURRENT' },
+  { name: 'legacy scope excludes current rows', pass: legacySignals.length === 1 && legacySignals[0].pair === 'OLD' },
+  { name: 'history scope keeps both cohorts', pass: historySignals.length === 2 },
 ];
 
 console.log('\n🎯 Final checks:');

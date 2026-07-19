@@ -28,7 +28,7 @@ PAPER_SIGNAL_ALERTS_ENABLED=true
 PAPER_SIGNAL_EXPERIMENT_ID=SCALPARENA_V2_20260719
 ```
 
-После этого `/scan` и авто-скан будут записывать paper-сигналы, tracker будет отмечать `TP_HIT`, `SL_HIT` или `TIMEOUT`, а статистику можно смотреть через `/signals 7`, `/signals 30`, `/signals all`.
+После этого `/scan` и авто-скан будут записывать paper-сигналы, tracker будет отмечать `TP_HIT`, `SL_HIT` или `TIMEOUT`. Обычные `/signals 7`, `/signals candidates 30` и `/signals pump all` показывают текущий эксперимент. Архив доступен через `/signals legacy candidates 30`, а объединённая история через `/signals history pump all`.
 
 Старые записи сохраняются как `LEGACY_PRE_20260719`. Новые paper-сигналы получают отдельные `project`, `experiment_id`, версию стратегии, источник рынка, timeframe и параметры динамического выхода.
 

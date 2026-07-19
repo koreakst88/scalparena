@@ -2,11 +2,30 @@ const RiskManager = require('../engine/riskManager');
 const FeeCalculator = require('../engine/feeCalculator');
 
 class PaperSignalStats {
+  static filterByExperiment(signals = [], scope = 'current', currentExperimentId = null) {
+    const normalized = String(scope || 'current').toLowerCase();
+
+    if (normalized === 'history') return signals;
+
+    if (normalized === 'legacy') {
+      return signals.filter((signal) => (
+        signal.is_legacy === true ||
+        String(signal.experiment_id || '').startsWith('LEGACY_')
+      ));
+    }
+
+    return signals.filter((signal) => (
+      signal.is_legacy === false &&
+      (!currentExperimentId || signal.experiment_id === currentExperimentId)
+    ));
+  }
+
   static filterByProject(signals = [], project = 'all') {
     const normalized = String(project || 'all').toLowerCase();
 
     if (normalized === 'pump') {
       return signals.filter((signal) => (
+        signal.project === 'PUMP' ||
         signal.strategy === 'PUMP_HUNTER' ||
         ['PUMP_HUNTER', 'PUMP_AUTO'].includes(signal.source)
       ));
@@ -14,12 +33,14 @@ class PaperSignalStats {
 
     if (normalized === 'candidates' || normalized === 'candidate') {
       return signals.filter((signal) => (
+        signal.project === 'CANDIDATE' ||
         ['CANDIDATE_ENGINE', 'CANDIDATE_AUTO'].includes(signal.source)
       ));
     }
 
     if (normalized === 'hybrid' || normalized === 'scan') {
       return signals.filter((signal) => (
+        signal.project === 'HYBRID' ||
         ['AUTO_SCAN', 'MANUAL_SCAN'].includes(signal.source)
       ));
     }

@@ -264,6 +264,8 @@ class ScalpArenaBot {
 /signals pump 7 — PumpHunter отдельно
 /signals pump edge 7 — плюсовые движения PumpHunter
 /signals open pump — активные pump-наблюдения
+/signals legacy candidates 30 — архив Candidate Engine
+/signals history pump all — вся история PumpHunter
 /stats 7 — сделки
 /patterns full 30 — паттерны
 
@@ -924,10 +926,16 @@ ${insights}`
     const period = this._parseStatsPeriod(options.period);
     const statsUser = user || await this.db.getUser(userId);
     const signals = await this.db.getPaperSignalsSince(userId, period.since);
-    const projectSignals = PaperSignalStats.filterByProject(signals, options.project);
+    const experimentSignals = PaperSignalStats.filterByExperiment(
+      signals,
+      options.scope,
+      CURRENT_PAPER_EXPERIMENT_ID
+    );
+    const projectSignals = PaperSignalStats.filterByProject(experimentSignals, options.project);
     const title = this._formatPaperSignalStatsTitle(
       period.title.replace(/[*📊]/g, '').replace('Период:', '').trim(),
-      options.project
+      options.project,
+      options.scope
     );
 
     if (options.mode === 'watching') {
@@ -958,6 +966,7 @@ ${insights}`
   _parsePaperSignalStatsArgs(args = []) {
     let mode = 'stats';
     let project = 'all';
+    let scope = 'current';
     let period = undefined;
 
     args.forEach((raw) => {
@@ -976,23 +985,34 @@ ${insights}`
         project = 'candidates';
       } else if (['hybrid', 'scan'].includes(value)) {
         project = 'hybrid';
+      } else if (['current', 'new'].includes(value)) {
+        scope = 'current';
+      } else if (['legacy', 'archive', 'old'].includes(value)) {
+        scope = 'legacy';
+      } else if (['history', 'combined'].includes(value)) {
+        scope = 'history';
       } else {
         period = value;
       }
     });
 
-    return { mode, project, period };
+    return { mode, project, scope, period };
   }
 
-  _formatPaperSignalStatsTitle(periodTitle, project = 'all') {
+  _formatPaperSignalStatsTitle(periodTitle, project = 'all', scope = 'current') {
     const projectTitle = {
       all: 'все проекты',
       pump: 'PumpHunter',
       candidates: 'Candidate Engine',
       hybrid: 'Hybrid scan',
     }[project] || project;
+    const scopeTitle = {
+      current: 'текущий эксперимент',
+      legacy: 'архив LEGACY',
+      history: 'вся история',
+    }[scope] || scope;
 
-    return `${periodTitle} | ${projectTitle}`;
+    return `${periodTitle} | ${projectTitle} | ${scopeTitle}`;
   }
 
   _getCandidateKeyboard(actionableCount = 0) {
@@ -1014,7 +1034,7 @@ ${insights}`
           { text: '📋 Детали', callback_data: 'candidates_full' },
         ],
         [
-          { text: '📊 Pump stats 7д', callback_data: 'pump_stats' },
+          { text: '📊 Candidate stats 7д', callback_data: 'candidates_stats' },
         ],
       ],
     };
@@ -1039,7 +1059,7 @@ ${insights}`
           { text: '📋 Детали', callback_data: 'pump_full' },
         ],
         [
-          { text: '📊 Paper stats 7д', callback_data: 'candidates_stats' },
+          { text: '📊 Pump stats 7д', callback_data: 'pump_stats' },
         ],
       ],
     };
@@ -1374,6 +1394,8 @@ ${insights}`
 /signals candidates 7 — только Candidate Engine
 /signals candidates detail 7 — MFE/MAE диагностика Candidate Engine
 /signals open pump — активные PumpHunter наблюдения
+/signals legacy candidates 30 — архив до нового эксперимента
+/signals history pump all — текущие и архивные PumpHunter вместе
 /stats — статистика дня
 /stats 7 / 30 / all — статистика за период
 /stats v2 / 30 v2 — только новая версия

@@ -279,7 +279,7 @@ class Scheduler {
           reply_markup: {
             inline_keyboard: [
               [
-                { text: '📊 Paper stats 7д', callback_data: 'candidates_stats' },
+                { text: '📊 Pump stats 7д', callback_data: 'pump_stats' },
                 { text: '📋 PumpHunter', callback_data: 'pump_refresh' },
               ],
             ],
