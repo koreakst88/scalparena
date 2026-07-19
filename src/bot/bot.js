@@ -50,21 +50,12 @@ const {
 } = require('../config/paperSignals');
 
 const BOT_COMMANDS = [
-  { command: 'start', description: 'Запуск и профиль трейдера' },
-  { command: 'menu', description: 'Короткое меню режимов' },
-  { command: 'scan', description: 'Строгие Hybrid сигналы' },
-  { command: 'candidates', description: 'Топ сценариев: full/paper' },
-  { command: 'candidate_auto', description: 'Авто candidates: on/off/status' },
-  { command: 'pump', description: 'PumpHunter Lab: full/paper' },
-  { command: 'pump_auto', description: 'Авто PumpHunter: on/off/status' },
-  { command: 'signals', description: 'Paper TP/SL статистика: 7/30/all' },
-  { command: 'patterns', description: 'Паттерны: full 14/30/all' },
-  { command: 'status', description: 'Открытые позиции' },
-  { command: 'rm', description: 'RM калькулятор: /rm 10' },
-  { command: 'exit', description: 'Закрыть позицию: /exit price' },
-  { command: 'stats', description: 'Статистика: 7/30/all/v2' },
-  { command: 'deposit', description: 'Пополнить баланс: /deposit 300' },
-  { command: 'help', description: 'Справка по командам' },
+  { command: 'menu', description: 'Главная панель' },
+  { command: 'candidates', description: 'Candidate Engine' },
+  { command: 'pump', description: 'PumpHunter Lab' },
+  { command: 'signals', description: 'Paper результаты' },
+  { command: 'status', description: 'Состояние системы' },
+  { command: 'help', description: 'Короткая справка' },
 ];
 
 class ScalpArenaBot {
@@ -201,79 +192,75 @@ class ScalpArenaBot {
         balance_at_8am: 200,
       });
 
-      await this._send(
+      await this._sendPlain(
         userId,
-        `
-👋 Привет, ${username}!
-
-Добро пожаловать в *ScalpArena* 🎯
-
-Я помогу тебе торговать дисциплинированно:
-- Нахожу импульсные сигналы на 15 парах
-- Считаю риск автоматически
-- Анализирую твои сделки через ИИ
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-💰 Твой баланс: *$200* (по умолчанию)
-
-Если хочешь изменить баланс, напиши:
-/deposit 300 _(добавить $300)_
-
-Готов торговать? Начни со скана:
-/scan
-
-Все режимы: /menu
-      `
+        `👋 Привет, ${username}!\n\nScalpArena готова собирать и проверять paper-сигналы. Стартовый расчётный баланс: $200.`
       );
     } else {
-      await this._send(
+      await this._sendPlain(
         userId,
-        `
-👋 С возвращением, ${username}!
-
-💰 Баланс: *$${user.account_balance}*
-📊 Команды: /menu /scan /candidates /pump /signals
-      `
+        `👋 С возвращением, ${username}!\nРасчётный баланс: $${user.account_balance}`
       );
     }
+
+    await this._sendMainMenu(userId);
   }
 
   async _onMenu(msg) {
     const userId = String(msg.chat.id);
-    await this._sendPlain(
-      userId,
-      `
-📋 SCALPARENA MENU
-━━━━━━━━━━━━━━━━━━━━
+    await this._sendMainMenu(userId);
+  }
 
-🎯 Строгие сигналы:
-/scan — Hybrid MR / Trend сигналы
+  async _sendMainMenu(userId, notice = '') {
+    const candidateEnabled = this._isCandidateAutoEnabled(userId);
+    const pumpEnabled = this._isPumpAutoEnabled(userId);
+    const text = [
+      notice,
+      '📋 SCALPARENA',
+      '━━━━━━━━━━━━━━━━━━━━',
+      'Два независимых paper-проекта:',
+      '🧠 Candidate Engine — рыночные сетапы',
+      '🚀 PumpHunter — импульсные монеты',
+      '',
+      `Автопоиск: Candidate ${candidateEnabled ? 'ON' : 'OFF'} | Pump ${pumpEnabled ? 'ON' : 'OFF'}`,
+      'Live-сделки на Bybit: OFF',
+    ].filter(Boolean).join('\n');
 
-🧠 Candidate Engine:
-/candidates — сценарии рынка сейчас
-/candidate_auto status — авто-кандидаты
+    await this._sendPlain(userId, text, {
+      reply_markup: this._getMainMenuKeyboard(userId),
+    });
+  }
 
-🚀 PumpHunter Lab:
-/pump — pump-кандидаты
-/pump full — детали
-/pump paper — записать pump-входы в paper
-/pump_auto status — авто-PumpHunter
+  _getMainMenuKeyboard(userId) {
+    const candidateEnabled = this._isCandidateAutoEnabled(userId);
+    const pumpEnabled = this._isPumpAutoEnabled(userId);
 
-📊 Статистика:
-/signals 7 — paper TP/SL статистика
-/signals pump 7 — PumpHunter отдельно
-/signals pump edge 7 — плюсовые движения PumpHunter
-/signals open pump — активные pump-наблюдения
-/signals legacy candidates 30 — архив Candidate Engine
-/signals history pump all — вся история PumpHunter
-/stats 7 — сделки
-/patterns full 30 — паттерны
-
-⚙️ Управление:
-/status — открытые позиции
-/help — полная справка
-      `.trim()
-    );
+    return {
+      inline_keyboard: [
+        [
+          { text: '🧠 Candidate', callback_data: 'menu_candidates' },
+          { text: '🚀 PumpHunter', callback_data: 'menu_pump' },
+        ],
+        [
+          {
+            text: `Candidate auto: ${candidateEnabled ? 'ON' : 'OFF'}`,
+            callback_data: 'menu_candidate_auto_toggle',
+          },
+          {
+            text: `Pump auto: ${pumpEnabled ? 'ON' : 'OFF'}`,
+            callback_data: 'menu_pump_auto_toggle',
+          },
+        ],
+        [
+          { text: '📊 Результаты', callback_data: 'menu_signals_current' },
+          { text: '🗄 Архив', callback_data: 'menu_signals_legacy' },
+        ],
+        [
+          { text: '👀 Активные', callback_data: 'menu_signals_open' },
+          { text: '⚙️ Статус', callback_data: 'menu_status' },
+        ],
+      ],
+    };
   }
 
   async _onScan(msg) {
@@ -482,10 +469,63 @@ ${paperSignal ? '\n🧪 Paper signal записан для отслеживан�
 
   async _onStatus(msg) {
     const userId = String(msg.chat.id);
-    const positions = await this.db.getOpenPositions(userId);
+    await this._sendSystemStatus(userId);
+  }
+
+  async _sendSystemStatus(userId) {
+    const [positions, activeSignals] = await Promise.all([
+      this.db.getOpenPositions(userId),
+      PAPER_SIGNAL_TRACKING_ENABLED ? this.db.getActivePaperSignals(userId) : Promise.resolve([]),
+    ]);
+    const currentSignals = PaperSignalStats.filterByExperiment(
+      activeSignals,
+      'current',
+      CURRENT_PAPER_EXPERIMENT_ID
+    );
+    const candidateCount = PaperSignalStats.filterByProject(currentSignals, 'candidates').length;
+    const pumpCount = PaperSignalStats.filterByProject(currentSignals, 'pump').length;
+    const hybridCount = PaperSignalStats.filterByProject(currentSignals, 'hybrid').length;
+    const schedulerStatus = this.scheduler?.getStatus?.() || {};
+
+    const text = [
+      '⚙️ SCALPARENA STATUS',
+      '━━━━━━━━━━━━━━━━━━━━',
+      `Candidate auto: ${this._isCandidateAutoEnabled(userId) ? 'ON' : 'OFF'}`,
+      `Последний цикл: ${this._formatStatusTime(schedulerStatus.lastCandidateScan)}`,
+      '',
+      `Pump auto: ${this._isPumpAutoEnabled(userId) ? 'ON' : 'OFF'}`,
+      `Последний цикл: ${this._formatStatusTime(schedulerStatus.lastPumpScan)}`,
+      '',
+      `Paper tracking: ${PAPER_SIGNAL_TRACKING_ENABLED ? 'ON' : 'OFF'}`,
+      `Эксперимент: ${CURRENT_PAPER_EXPERIMENT_ID}`,
+      `Активные: Candidate ${candidateCount} | Pump ${pumpCount} | Hybrid ${hybridCount}`,
+      `Ручные позиции: ${positions?.length || 0}`,
+      'Live-сделки на Bybit: OFF',
+    ].join('\n');
+
+    await this._sendPlain(userId, text, {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: `Candidate auto: ${this._isCandidateAutoEnabled(userId) ? 'ON' : 'OFF'}`,
+              callback_data: 'menu_candidate_auto_toggle',
+            },
+            {
+              text: `Pump auto: ${this._isPumpAutoEnabled(userId) ? 'ON' : 'OFF'}`,
+              callback_data: 'menu_pump_auto_toggle',
+            },
+          ],
+          [
+            { text: '📊 Результаты', callback_data: 'menu_signals_current' },
+            { text: '📋 Главное меню', callback_data: 'menu_home' },
+          ],
+        ],
+      },
+    });
 
     if (!positions || positions.length === 0) {
-      return this._send(userId, '📭 Нет открытых позиций');
+      return;
     }
 
     for (const pos of positions) {
@@ -529,6 +569,18 @@ Current: \`$${current}\`
         }
       );
     }
+  }
+
+  _formatStatusTime(value) {
+    if (!value) return 'ещё не запускался';
+
+    return new Date(value).toLocaleString('ru-RU', {
+      timeZone: 'Asia/Seoul',
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   }
 
   async _onExit(msg, match) {
@@ -1361,64 +1413,34 @@ ${insights}`
 
   async _onHelp(msg) {
     const userId = String(msg.chat.id);
-    await this._send(
+    await this._sendPlain(
       userId,
-      `
-📚 *СПРАВКА SCALPARENA*
-════════════════════════════════
+      `📚 SCALPARENA
+━━━━━━━━━━━━━━━━━━━━
 
-📋 /menu — короткое меню режимов
+/menu — главная панель и автопоиск
+/candidates — Candidate Engine сейчас
+/pump — PumpHunter сейчас
+/signals 7 — результаты текущего эксперимента
+/status — автопоиск, наблюдения и режимы
 
-🎯 *Строгие сигналы*
-/scan — найти Hybrid сигналы (MR + Momentum)
-/candidates — топ торговых сценариев сейчас
-/candidates full — диагностика по всем парам
-/candidates paper — записать топ-кандидатов в paper tracking
-/candidate_auto status — статус авто-candidates
-/candidate_auto on / off — включить/выключить авто-candidates в runtime
-/candidateauto on / off — короткий alias
+Раздельные отчёты:
+/signals candidates 7
+/signals pump 7
+/signals pump edge 7
+/signals open candidates
+/signals open pump
 
-🚀 *PumpHunter Lab*
-/pump — pump-кандидаты сейчас
-/pump full — диагностика pump-кандидатов
-/pump paper — записать pump-входы в paper
-/pump debug — проверить Bybit REST доступ
-/pump_auto status — статус авто-PumpHunter
-/pump_auto on / off — включить/выключить авто-PumpHunter в runtime
-/pumpauto on / off — короткий alias
+Архив до перезапуска эксперимента:
+/signals legacy candidates 30
+/signals legacy pump 30
 
-📊 *Статистика*
-/signals 7 / 30 / all — paper-сигналы и TP/SL статистика
-/signals pump 7 — только PumpHunter
-/signals pump edge 7 — MFE/плюсовые движения PumpHunter
-/signals candidates 7 — только Candidate Engine
-/signals candidates detail 7 — MFE/MAE диагностика Candidate Engine
-/signals open pump — активные PumpHunter наблюдения
-/signals legacy candidates 30 — архив до нового эксперимента
-/signals history pump all — текущие и архивные PumpHunter вместе
-/stats — статистика дня
-/stats 7 / 30 / all — статистика за период
-/stats v2 / 30 v2 — только новая версия
-/patterns — паттерны за 7 дней
-/patterns full 14 / 30 / all — детальная аналитика
-/patterns full 30 v2 — новая версия отдельно
+Диагностика при необходимости:
+/candidates full
+/pump full
+/pump debug
 
-⚙️ *Сделки и баланс*
-/rm 10 — RM калькулятор
-/status — открытые позиции
-/exit 91.57 — закрыть позицию
-/deposit 300 — пополнить баланс
-/help — эта справка
-
-════════════════════════════════
-💡 *Типичный день:*
-1️⃣ /scan → выбрать сигнал
-2️⃣ Открыть LONG/SHORT на Bybit вручную
-3️⃣ Нажать \`Я открыл позицию\`
-4️⃣ /exit цена → когда закроешь
-5️⃣ /stats → анализ дня
-6️⃣ /patterns → какие сетапы работают
-    `
+Live-сделки на Bybit отключены. Бот собирает и проверяет paper-сигналы.`
     );
   }
 
@@ -1431,6 +1453,52 @@ ${insights}`
     const data = query.data;
 
     await this.bot.answerCallbackQuery(query.id);
+
+    if (data === 'menu_home') {
+      return this._sendMainMenu(userId);
+    }
+
+    if (data === 'menu_candidates') {
+      return this._sendCandidates(userId, 'top');
+    }
+
+    if (data === 'menu_pump') {
+      return this._sendPumpHunter(userId, 'top');
+    }
+
+    if (data === 'menu_candidate_auto_toggle') {
+      const enabled = !this._isCandidateAutoEnabled(userId);
+      this.candidateAutoOverrides.set(userId, enabled);
+      return this._sendMainMenu(
+        userId,
+        `${enabled ? '✅' : '⏸️'} Candidate auto ${enabled ? 'включен' : 'выключен'} до следующего redeploy.`
+      );
+    }
+
+    if (data === 'menu_pump_auto_toggle') {
+      const enabled = !this._isPumpAutoEnabled(userId);
+      this.pumpAutoOverrides.set(userId, enabled);
+      return this._sendMainMenu(
+        userId,
+        `${enabled ? '✅' : '⏸️'} Pump auto ${enabled ? 'включен' : 'выключен'} до следующего redeploy.`
+      );
+    }
+
+    if (data === 'menu_signals_current') {
+      return this._sendPaperSignalStats(userId, ['7']);
+    }
+
+    if (data === 'menu_signals_legacy') {
+      return this._sendPaperSignalStats(userId, ['legacy', '30']);
+    }
+
+    if (data === 'menu_signals_open') {
+      return this._sendPaperSignalStats(userId, ['open', '7']);
+    }
+
+    if (data === 'menu_status') {
+      return this._sendSystemStatus(userId);
+    }
 
     if (data === 'candidates_refresh') {
       return this._sendCandidates(userId, 'top');
@@ -1884,5 +1952,7 @@ Exit:  \`$${price}\`
     };
   }
 }
+
+ScalpArenaBot.BOT_COMMANDS = BOT_COMMANDS;
 
 module.exports = ScalpArenaBot;
