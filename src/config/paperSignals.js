@@ -5,6 +5,7 @@ const DEFAULT_CANDIDATE_AUTO_MIN_SCORE = 75;
 const DEFAULT_CANDIDATE_AUTO_MIN_RR = 1.2;
 const DEFAULT_CANDIDATE_AUTO_COOLDOWN_MINUTES = 90;
 const DEFAULT_CANDIDATE_AUTO_MAX_ALERTS = 2;
+const DEFAULT_PAPER_SLIPPAGE_BPS = 5;
 
 function parseBoolean(value, fallback = false) {
   if (value == null || value === '') return fallback;
@@ -16,6 +17,11 @@ function parsePositiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parseNonNegativeNumber(value, fallback) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
 module.exports = {
   PAPER_SIGNAL_TRACKING_ENABLED: parseBoolean(process.env.PAPER_SIGNAL_TRACKING_ENABLED, false),
   PAPER_SIGNAL_ALERTS_ENABLED: parseBoolean(process.env.PAPER_SIGNAL_ALERTS_ENABLED, true),
@@ -24,6 +30,10 @@ module.exports = {
   PAPER_SIGNAL_TRACK_INTERVAL_MS: parsePositiveInt(
     process.env.PAPER_SIGNAL_TRACK_INTERVAL_MS,
     DEFAULT_TRACK_INTERVAL_MS
+  ),
+  PAPER_SIGNAL_SLIPPAGE_BPS: parseNonNegativeNumber(
+    process.env.PAPER_SIGNAL_SLIPPAGE_BPS,
+    DEFAULT_PAPER_SLIPPAGE_BPS
   ),
   CANDIDATE_AUTO_SCAN_ENABLED: parseBoolean(process.env.CANDIDATE_AUTO_SCAN_ENABLED, false),
   CANDIDATE_AUTO_SCAN_INTERVAL_MS: parsePositiveInt(

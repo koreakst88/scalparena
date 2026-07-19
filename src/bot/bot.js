@@ -1007,7 +1007,9 @@ ${insights}`
       return;
     }
 
-    const stats = PaperSignalStats.calculate(projectSignals);
+    const stats = PaperSignalStats.calculate(projectSignals, {
+      balance: statsUser?.account_balance || 200,
+    });
 
     await this._sendPlain(
       userId,

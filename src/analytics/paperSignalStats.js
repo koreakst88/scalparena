@@ -1,5 +1,6 @@
 const RiskManager = require('../engine/riskManager');
 const FeeCalculator = require('../engine/feeCalculator');
+const { PAPER_SIGNAL_SLIPPAGE_BPS } = require('../config/paperSignals');
 
 class PaperSignalStats {
   static filterByExperiment(signals = [], scope = 'current', currentExperimentId = null) {
@@ -48,11 +49,14 @@ class PaperSignalStats {
     return signals;
   }
 
-  static calculate(signals = []) {
+  static calculate(signals = [], options = {}) {
     const resolved = signals.filter((signal) => signal.status !== 'WATCHING');
     const tp = resolved.filter((signal) => signal.status === 'TP_HIT');
     const sl = resolved.filter((signal) => signal.status === 'SL_HIT');
     const timeout = resolved.filter((signal) => signal.status === 'TIMEOUT');
+
+    const resolution = this._calculateResolutionQuality(resolved);
+    const money = this._calculateRealizedPortfolio(resolved, options);
 
     return {
       total: signals.length,
@@ -68,6 +72,8 @@ class PaperSignalStats {
           .map((signal) => Number(signal.time_to_result_minutes))
           .filter((value) => Number.isFinite(value))
       ),
+      resolution,
+      money,
       byStrategy: this._group(signals, (signal) => signal.strategy || 'UNKNOWN'),
       byPair: this._group(signals, (signal) => signal.pair || 'UNKNOWN'),
     };
@@ -95,6 +101,28 @@ class PaperSignalStats {
 
     if (stats.avgTimeToResult != null) {
       lines.push(`Avg time: ${stats.avgTimeToResult} мин`);
+    }
+
+    if (stats.resolution?.measured > 0) {
+      lines.push(
+        `Path quality: candle ${stats.resolution.candlePath} | snapshot ${stats.resolution.snapshot} | ` +
+        `timeout ${stats.resolution.timeout} | ambiguous ${stats.resolution.ambiguous}`
+      );
+    }
+
+    if (stats.money) {
+      lines.push(
+        '',
+        '💵 PAPER P&L:',
+        `Модель: старт $${stats.money.startBalance} | max ${stats.money.maxPositions} позиции | ` +
+        `slippage ${stats.money.slippageBps} bps/сторону`,
+        `Принято: ${stats.money.accepted} | пропущено из-за лимита: ${stats.money.skippedByCapacity} | ` +
+        `нет цены выхода: ${stats.money.missingExit}`,
+        `Net: ${stats.money.netPnl >= 0 ? '+' : ''}$${stats.money.netPnl} | ` +
+        `баланс $${stats.money.endBalance} | return ${this._formatPercent(stats.money.returnPercent)}`,
+        `Wins/Losses: ${stats.money.wins}/${stats.money.losses} | PF ${stats.money.profitFactor ?? 'n/a'} | ` +
+        `fees $${stats.money.totalFees} | slippage $${stats.money.slippageCost}`
+      );
     }
 
     lines.push('', '🧠 Стратегии:');
@@ -231,6 +259,161 @@ class PaperSignalStats {
     lines.push(...this._formatEdgeSignals(enriched.slice().sort((a, b) => (a.mfePercent || 0) - (b.mfePercent || 0)).slice(0, 7)));
 
     return lines.join('\n');
+  }
+
+  static _calculateResolutionQuality(signals = []) {
+    const measured = signals.filter((signal) => signal.resolution_method);
+
+    return {
+      measured: measured.length,
+      candlePath: measured.filter((signal) => signal.resolution_method === 'CANDLE_PATH').length,
+      snapshot: measured.filter((signal) => signal.resolution_method === 'PRICE_SNAPSHOT').length,
+      timeout: measured.filter((signal) => signal.resolution_method === 'TIMEOUT').length,
+      ambiguous: measured.filter((signal) => signal.first_hit_ambiguous === true).length,
+    };
+  }
+
+  static _calculateRealizedPortfolio(signals = [], options = {}) {
+    const startBalance = Number(options.balance);
+    if (!Number.isFinite(startBalance) || startBalance <= 0) return null;
+    if (signals.length === 0) return null;
+
+    const maxPositions = Number.isFinite(Number(options.maxPositions))
+      ? Math.max(1, Number.parseInt(options.maxPositions, 10))
+      : RiskManager.getMaxPositions();
+    const slippageBps = Number.isFinite(Number(options.slippageBps))
+      ? Math.max(0, Number(options.slippageBps))
+      : PAPER_SIGNAL_SLIPPAGE_BPS;
+    const ordered = signals
+      .map((signal) => ({
+        signal,
+        entryAt: this._signalDate(signal.created_at || signal.generated_at),
+        exitAt: this._signalDate(signal.resolved_at || signal.expires_at),
+      }))
+      .filter((item) => item.entryAt && item.exitAt)
+      .sort((a, b) => {
+        const timeDiff = a.entryAt - b.entryAt;
+        if (timeDiff !== 0) return timeDiff;
+        return Number(b.signal.confidence || 0) - Number(a.signal.confidence || 0);
+      });
+
+    let balance = startBalance;
+    let skippedByCapacity = 0;
+    let missingExit = signals.length - ordered.length;
+    let accepted = 0;
+    let wins = 0;
+    let losses = 0;
+    let grossProfit = 0;
+    let grossLoss = 0;
+    let totalFees = 0;
+    let slippageCost = 0;
+    const activeEnds = [];
+
+    ordered.forEach(({ signal, entryAt, exitAt }) => {
+      for (let index = activeEnds.length - 1; index >= 0; index -= 1) {
+        if (activeEnds[index] <= entryAt) activeEnds.splice(index, 1);
+      }
+
+      if (activeEnds.length >= maxPositions) {
+        skippedByCapacity += 1;
+        return;
+      }
+
+      activeEnds.push(exitAt);
+      accepted += 1;
+
+      const entryPrice = this._positiveNumber(signal.entry_price);
+      const exitPrice = this._getRealizedExitPrice(signal);
+      if (!entryPrice || !exitPrice) {
+        missingExit += 1;
+        return;
+      }
+
+      const direction = String(signal.direction || 'LONG').toUpperCase();
+      const adjusted = this._applyAdverseSlippage(entryPrice, exitPrice, direction, slippageBps);
+      const riskBalance = Math.max(1, balance);
+      const margin = RiskManager.getMargin(riskBalance);
+      const leverage = RiskManager.getLeverage(riskBalance);
+      const ideal = FeeCalculator.calculatePnL({
+        entryPrice,
+        exitPrice,
+        margin,
+        leverage,
+        direction,
+      });
+      const realistic = FeeCalculator.calculatePnL({
+        entryPrice: adjusted.entryPrice,
+        exitPrice: adjusted.exitPrice,
+        margin,
+        leverage,
+        direction,
+      });
+
+      balance += realistic.netPnl;
+      totalFees += realistic.totalFees;
+      slippageCost += ideal.netPnl - realistic.netPnl;
+
+      if (realistic.netPnl > 0) {
+        wins += 1;
+        grossProfit += realistic.netPnl;
+      } else if (realistic.netPnl < 0) {
+        losses += 1;
+        grossLoss += Math.abs(realistic.netPnl);
+      }
+    });
+
+    const netPnl = balance - startBalance;
+
+    return {
+      startBalance: this._round(startBalance, 2),
+      endBalance: this._round(balance, 2),
+      netPnl: this._round(netPnl, 2),
+      returnPercent: this._round((netPnl / startBalance) * 100, 2),
+      accepted,
+      skippedByCapacity,
+      missingExit,
+      wins,
+      losses,
+      profitFactor: grossLoss > 0 ? this._round(grossProfit / grossLoss, 2) : null,
+      totalFees: this._round(totalFees, 2),
+      slippageCost: this._round(Math.max(0, slippageCost), 2),
+      slippageBps,
+      maxPositions,
+    };
+  }
+
+  static _getRealizedExitPrice(signal) {
+    if (signal.status === 'TP_HIT') return this._positiveNumber(signal.take_profit);
+    if (signal.status === 'SL_HIT') return this._positiveNumber(signal.stop_loss);
+    if (signal.status === 'TIMEOUT') return this._positiveNumber(signal.hit_price);
+    return this._positiveNumber(signal.hit_price);
+  }
+
+  static _applyAdverseSlippage(entryPrice, exitPrice, direction, slippageBps) {
+    const rate = slippageBps / 10000;
+
+    if (direction === 'SHORT') {
+      return {
+        entryPrice: entryPrice * (1 - rate),
+        exitPrice: exitPrice * (1 + rate),
+      };
+    }
+
+    return {
+      entryPrice: entryPrice * (1 + rate),
+      exitPrice: exitPrice * (1 - rate),
+    };
+  }
+
+  static _signalDate(value) {
+    if (!value) return null;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  static _positiveNumber(value) {
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0 ? number : null;
   }
 
   static _group(signals, getKey) {
