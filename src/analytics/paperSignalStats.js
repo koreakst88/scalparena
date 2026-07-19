@@ -99,6 +99,8 @@ class PaperSignalStats {
       money,
       byStrategy: this._group(signals, (signal) => signal.strategy || 'UNKNOWN'),
       byPair: this._group(signals, (signal) => signal.pair || 'UNKNOWN'),
+      byMarketContext: this._groupByMetadata(signals, 'state'),
+      byMarketDecision: this._groupByMetadata(signals, 'decision'),
     };
   }
 
@@ -153,6 +155,16 @@ class PaperSignalStats {
     lines.push('', '📊 Пары:');
     lines.push(...this._formatRows(stats.byPair));
 
+    if (stats.byMarketContext?.length) {
+      lines.push('', '🌐 BTC Market Context:');
+      lines.push(...this._formatRows(stats.byMarketContext));
+    }
+
+    if (stats.byMarketDecision?.length) {
+      lines.push('', '🧪 Research decisions (не фильтр):');
+      lines.push(...this._formatRows(stats.byMarketDecision));
+    }
+
     if (stats.watching > 0) {
       lines.push('', '👀 Активные наблюдения: /signals open | /signals open pump | /signals open candidates');
     }
@@ -183,6 +195,10 @@ class PaperSignalStats {
         `${index + 1}. ${signal.pair} ${signal.direction} | ${signal.strategy || 'UNKNOWN'} | ${signal.source || 'UNKNOWN'}`
       );
       lines.push(`Entry $${signal.entry_price} | TP $${signal.take_profit} | SL $${signal.stop_loss}`);
+      const marketContext = this._getMarketContext(signal);
+      if (marketContext) {
+        lines.push(`BTC: ${marketContext.state || 'UNKNOWN'} | research ${marketContext.decision || 'UNKNOWN'}`);
+      }
     });
 
     if (watching.length > 15) {
@@ -217,6 +233,20 @@ class PaperSignalStats {
     lines.push(...this._formatDetailRows(this._detailGroup(enriched, (signal) => signal.strategy || 'UNKNOWN')));
     lines.push('', '📊 По парам:');
     lines.push(...this._formatDetailRows(this._detailGroup(enriched, (signal) => signal.pair || 'UNKNOWN')));
+
+    const contextSignals = enriched.filter((signal) => this._getMarketContext(signal));
+    if (contextSignals.length) {
+      lines.push('', '🌐 По BTC Market Context:');
+      lines.push(...this._formatDetailRows(this._detailGroup(
+        contextSignals,
+        (signal) => this._getMarketContext(signal).state || 'UNKNOWN'
+      )));
+      lines.push('', '🧪 По research decision (не фильтр):');
+      lines.push(...this._formatDetailRows(this._detailGroup(
+        contextSignals,
+        (signal) => this._getMarketContext(signal).decision || 'UNKNOWN'
+      )));
+    }
 
     const weakest = enriched
       .filter((signal) => signal.status === 'SL_HIT' || signal.status === 'TIMEOUT')
@@ -465,6 +495,25 @@ class PaperSignalStats {
         if (b.total !== a.total) return b.total - a.total;
         return (b.winRate || 0) - (a.winRate || 0);
       });
+  }
+
+  static _groupByMetadata(signals, field) {
+    const tagged = signals.filter((signal) => this._getMarketContext(signal));
+    return this._group(tagged, (signal) => this._getMarketContext(signal)[field] || 'UNKNOWN');
+  }
+
+  static _getMarketContext(signal) {
+    let metadata = signal?.signal_metadata ?? signal?.signalMetadata;
+    if (typeof metadata === 'string') {
+      try {
+        metadata = JSON.parse(metadata);
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    const context = metadata?.marketContext;
+    return context && typeof context === 'object' ? context : null;
   }
 
   static _detailGroup(signals, getKey) {

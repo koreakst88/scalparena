@@ -1,4 +1,6 @@
 const PumpStateMachineV2 = require('./pumpStateMachineV2');
+const MarketContextV1 = require('./marketContextV1');
+const { MARKET_CONTEXT_V1_ENABLED } = require('../config/marketContext');
 
 const DEFAULT_SCAN_LIMIT = 60;
 const DEFAULT_KLINE_INTERVAL = '15';
@@ -29,13 +31,29 @@ class PumpHunterEngine {
 
     const symbols = this._selectTickerUniverse(tickers, options.scanLimit || DEFAULT_SCAN_LIMIT);
     const reports = [];
+    const candleCache = new Map();
+    const btcTicker = tickers.find((ticker) => ticker.symbol === 'BTCUSDT');
+    let marketContext = null;
+
+    if (MARKET_CONTEXT_V1_ENABLED && btcTicker) {
+      const btcCandles = await this._loadCandles(provider, marketSource, 'BTCUSDT', options);
+      candleCache.set('BTCUSDT', btcCandles);
+      marketContext = MarketContextV1.analyze(btcCandles, {
+        source: marketSource,
+        timeframe: options.interval || DEFAULT_KLINE_INTERVAL,
+      });
+    }
 
     for (const ticker of symbols) {
-      const candles = await this._loadCandles(provider, marketSource, ticker.symbol, options);
-      const shadowV2 = PumpStateMachineV2.analyzeSymbol(ticker.symbol, ticker, candles, {
+      const candles = candleCache.get(ticker.symbol) ||
+        await this._loadCandles(provider, marketSource, ticker.symbol, options);
+      const shadowReport = PumpStateMachineV2.analyzeSymbol(ticker.symbol, ticker, candles, {
         marketSource,
         timeframe: options.interval || DEFAULT_KLINE_INTERVAL,
       });
+      const shadowV2 = marketContext
+        ? MarketContextV1.attach(shadowReport, marketContext)
+        : shadowReport;
       reports.push({
         ...this.analyzeSymbol(ticker.symbol, ticker, candles),
         marketSource,

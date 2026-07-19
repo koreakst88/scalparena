@@ -264,6 +264,7 @@ class PumpStateMachineV2 {
       timeframe: candidate.timeframe,
       exitProfile: 'state_v2_rr_1_8',
       signalMetadata: {
+        marketContext: candidate.marketContext || null,
         state: candidate.state,
         ignitionTimestamp: candidate.ignitionTimestamp,
         ignitionMovePercent: candidate.ignitionMovePercent,

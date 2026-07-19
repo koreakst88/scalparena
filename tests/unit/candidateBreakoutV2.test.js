@@ -55,6 +55,7 @@ console.log('Candidate Breakout V2 Shadow Test\n');
 const candles = buildConfirmedBreakout();
 const report = CandidateBreakoutV2.analyzePair('TESTUSDT', candles);
 const candidate = report.candidate;
+candidate.marketContext = { version: 'market_context_v1', state: 'RISK_ON', decision: 'ALLOW' };
 const paperSignal = CandidateBreakoutV2.toPaperSignal(candidate);
 const shortReport = CandidateBreakoutV2.analyzePair(
   'SHORTUSDT',
@@ -104,6 +105,10 @@ const checks = [
     name: 'Breakout diagnostics are preserved in signal metadata',
     pass: paperSignal?.signalMetadata?.breakoutLevel > 0 &&
       paperSignal?.signalMetadata?.triggerAgeCandles === 2,
+  },
+  {
+    name: 'Market context research tag is preserved in signal metadata',
+    pass: paperSignal?.signalMetadata?.marketContext?.decision === 'ALLOW',
   },
   {
     name: 'Zero-volume backfill candles cannot qualify',

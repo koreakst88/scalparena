@@ -63,6 +63,9 @@ const signals = [
     take_profit: 0.24,
     stop_loss: 0.21,
     created_at: '2026-06-30T09:00:00Z',
+    signal_metadata: JSON.stringify({
+      marketContext: { state: 'RISK_ON', decision: 'ALLOW' },
+    }),
   },
 ];
 
@@ -78,9 +81,16 @@ const shadowSourceSignals = [
     strategy: 'BREAKOUT_V2_SHADOW',
     source: 'CANDIDATE_V2_SHADOW',
     status: 'WATCHING',
+    signal_metadata: {
+      marketContext: { state: 'HIGH_VOL', decision: 'BLOCK' },
+    },
   },
 ];
 const shadowSignals = PaperSignalStats.filterByProject(shadowSourceSignals, 'candidate_v2');
+const shadowStats = PaperSignalStats.calculate(shadowSignals);
+const shadowMessage = PaperSignalStats.format(shadowStats, 'Candidate V2 shadow');
+const shadowWatchingMessage = PaperSignalStats.formatWatching(shadowSignals, 'Candidate V2 shadow');
+const shadowDetailMessage = PaperSignalStats.formatDetail(shadowSignals, 'Candidate V2 shadow');
 const defaultSignals = PaperSignalStats.filterByProject(shadowSourceSignals, 'all');
 const pumpShadowSourceSignals = [
   ...shadowSourceSignals,
@@ -158,6 +168,11 @@ const checks = [
   { name: 'pump filter keeps only PumpHunter', pass: pumpSignals.length === 1 && pumpSignals[0].pair === 'HUSDT' },
   { name: 'candidate filter keeps Candidate Engine source', pass: candidateSignals.length === 1 && candidateSignals[0].pair === 'KGENUSDT' },
   { name: 'shadow filter keeps only Candidate V2 research rows', pass: shadowSignals.length === 1 && shadowSignals[0].pair === 'SHADOWUSDT' },
+  { name: 'shadow stats group by BTC context', pass: shadowStats.byMarketContext[0]?.label === 'HIGH_VOL' },
+  { name: 'shadow stats group by research decision', pass: shadowStats.byMarketDecision[0]?.label === 'BLOCK' },
+  { name: 'shadow report labels context as research only', pass: shadowMessage.includes('Research decisions (не фильтр)') },
+  { name: 'watching report displays BTC context', pass: shadowWatchingMessage.includes('BTC: HIGH_VOL | research BLOCK') },
+  { name: 'detail report compares context cohorts', pass: shadowDetailMessage.includes('По BTC Market Context') },
   { name: 'default reports exclude silent shadow rows', pass: defaultSignals.length === signals.length },
   { name: 'pump shadow filter keeps only State V2 rows', pass: pumpShadowSignals.length === 1 && pumpShadowSignals[0].pair === 'PUMPV2USDT' },
   { name: 'default reports exclude both shadow projects', pass: publicProjectSignals.length === signals.length },

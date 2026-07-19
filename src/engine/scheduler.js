@@ -5,6 +5,7 @@ const CandidateEngine = require('./candidateEngine');
 const CandidateBreakoutV2 = require('./candidateBreakoutV2');
 const PumpHunterEngine = require('./pumpHunterEngine');
 const PumpStateMachineV2 = require('./pumpStateMachineV2');
+const MarketContextV1 = require('./marketContextV1');
 const RiskManager = require('./riskManager');
 const {
   PAPER_SIGNAL_TRACKING_ENABLED,
@@ -35,6 +36,7 @@ const {
   CURRENT_PAPER_EXPERIMENT_ID,
   PAPER_PROJECTS,
 } = require('../config/paperExperiment');
+const { MARKET_CONTEXT_V1_ENABLED } = require('../config/marketContext');
 
 const SCAN_INTERVAL_MS = 15 * 60 * 1000;
 const SEOUL_TIMEZONE = process.env.TIMEZONE || 'Asia/Seoul';
@@ -235,19 +237,32 @@ class Scheduler {
     if (!CANDIDATE_V2_SHADOW_ENABLED || !PAPER_SIGNAL_TRACKING_ENABLED) return;
 
     const reports = CandidateBreakoutV2.scanAll(this.provider);
-    const candidates = CandidateBreakoutV2.getActionableCandidates(
+    const marketContext = MARKET_CONTEXT_V1_ENABLED
+      ? MarketContextV1.analyze(this.provider.getCandles('BTCUSDT', 100), {
+        timeframe: String(process.env.BYBIT_WS_INTERVAL || '1'),
+        source: 'BYBIT_WEBSOCKET',
+      })
+      : null;
+    const rawCandidates = CandidateBreakoutV2.getActionableCandidates(
       reports,
       CANDIDATE_V2_SHADOW_MAX_PER_CYCLE
     );
+    const candidates = marketContext
+      ? rawCandidates.map((candidate) => MarketContextV1.attach(candidate, marketContext))
+      : rawCandidates;
 
     if (!candidates.length) {
       console.log(
-        `🔬 Candidate V2 shadow: no qualified breakouts | ${this._formatShadowDiagnostics(reports)}`
+        `🔬 Candidate V2 shadow: no qualified breakouts | ${this._formatShadowDiagnostics(reports)} | ` +
+        `market=${marketContext?.state || 'OFF'}`
       );
       return;
     }
 
-    console.log(`🔬 Candidate V2 shadow: ${candidates.length} qualified setup(s)`);
+    console.log(
+      `🔬 Candidate V2 shadow: ${candidates.length} qualified setup(s) | ` +
+      `market=${marketContext?.state || 'OFF'} | ${this._formatContextDecisions(candidates)}`
+    );
 
     for (const user of users) {
       const userId = String(user.telegram_id);
@@ -286,6 +301,18 @@ class Scheduler {
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
       .map(([reason, count]) => `${reason}=${count}`)
+      .join(', ');
+  }
+
+  _formatContextDecisions(candidates = []) {
+    const counts = candidates.reduce((result, candidate) => {
+      const decision = candidate.marketContext?.decision || 'UNMARKED';
+      result[decision] = (result[decision] || 0) + 1;
+      return result;
+    }, {});
+
+    return Object.entries(counts)
+      .map(([decision, count]) => `${decision}=${count}`)
       .join(', ');
   }
 
@@ -345,10 +372,16 @@ class Scheduler {
       return result;
     }, {});
 
-    return Object.entries(counts)
+    const states = Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
       .map(([state, count]) => `${state}=${count}`)
       .join(', ');
+    const marketState = reports.find((report) => report.shadowV2?.marketContext)?.shadowV2
+      ?.marketContext?.state;
+    const entryCandidates = PumpStateMachineV2.getEntryReady(reports, reports.length);
+    const decisions = this._formatContextDecisions(entryCandidates);
+
+    return `${states} | market=${marketState || 'OFF'}${decisions ? ` | ${decisions}` : ''}`;
   }
 
   async _sendPumpAlertsToUser(user, candidates) {

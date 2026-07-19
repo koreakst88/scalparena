@@ -121,6 +121,7 @@ class CandidateBreakoutV2 {
       marketSource: 'BYBIT_WEBSOCKET',
       timeframe: String(process.env.BYBIT_WS_INTERVAL || '1'),
       signalMetadata: {
+        marketContext: candidate.marketContext || null,
         breakoutLevel: candidate.breakoutLevel,
         triggerTimestamp: candidate.triggerTimestamp,
         triggerAgeCandles: candidate.triggerAgeCandles,

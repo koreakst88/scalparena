@@ -28,6 +28,11 @@ const reports = ['AUSDT', 'BUSDT', 'CUSDT'].map((pair, index) => ({
     marketSource: 'OKX_SWAP_FALLBACK',
     timeframe: '15',
     summary: 'test state sequence',
+    marketContext: {
+      version: 'market_context_v1',
+      state: 'RISK_ON',
+      decision: 'ALLOW',
+    },
   },
 }));
 
@@ -65,6 +70,10 @@ scheduler._recordPumpV2Shadow([{ telegram_id: '42' }], reports)
           activeFilter?.experimentId === 'SCALPARENA_V2_20260719',
       },
       { name: 'Shadow recording sends no Telegram messages', pass: telegramMessages === 0 },
+      {
+        name: 'Market context research tag reaches paper metadata',
+        pass: tracked.every((item) => item.signal.signalMetadata?.marketContext?.decision === 'ALLOW'),
+      },
     ];
 
     checks.forEach((check) => console.log(`   ${check.pass ? 'PASS' : 'FAIL'} ${check.name}`));

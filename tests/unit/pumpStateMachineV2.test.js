@@ -64,6 +64,7 @@ const options = { marketSource: 'OKX_SWAP_FALLBACK', timeframe: '15' };
 const breakout = PumpStateMachineV2.analyzeSymbol('STATEUSDT', ticker, buildSequence('breakout'), options);
 const retest = PumpStateMachineV2.analyzeSymbol('STATEUSDT', ticker, buildSequence('retest'), options);
 const entry = PumpStateMachineV2.analyzeSymbol('STATEUSDT', ticker, buildSequence('entry'), options);
+entry.marketContext = { version: 'market_context_v1', state: 'RISK_ON', decision: 'ALLOW' };
 const paperSignal = PumpStateMachineV2.toPaperSignal(entry);
 const strongReclaimCandles = buildSequence('entry');
 strongReclaimCandles[strongReclaimCandles.length - 1].volume = 2600;
@@ -103,6 +104,10 @@ const checks = [
     pass: paperSignal?.strategy === 'PUMP_STATE_V2_SHADOW' &&
       paperSignal?.signalMetadata?.state === 'ENTRY_READY' &&
       paperSignal?.marketSource === 'OKX_SWAP_FALLBACK',
+  },
+  {
+    name: 'Paper signal preserves Market Context research tag',
+    pass: paperSignal?.signalMetadata?.marketContext?.decision === 'ALLOW',
   },
   {
     name: 'A strong reclaim is not mistaken for a brand-new ignition',

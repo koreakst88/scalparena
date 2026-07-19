@@ -20,6 +20,7 @@ const CandidateFormatter = require('../analytics/candidateFormatter');
 const PumpHunterFormatter = require('../analytics/pumpHunterFormatter');
 const { formatDetailedAnalytics } = require('../analytics/formatters');
 const { CURRENT_STRATEGY_VERSION, LEGACY_STRATEGY_VERSION } = require('../config/strategy');
+const { MARKET_CONTEXT_V1_ENABLED } = require('../config/marketContext');
 const {
   CURRENT_PAPER_EXPERIMENT_ID,
   getPaperProject,
@@ -507,6 +508,7 @@ ${paperSignal ? '\n🧪 Paper signal записан для отслеживан�
       `Активные: Candidate ${candidateCount} | Pump ${pumpCount} | Hybrid ${hybridCount}`,
       `Shadow V2: ${CANDIDATE_V2_SHADOW_ENABLED ? 'ON' : 'OFF'} | активных ${candidateV2Count} | alerts OFF`,
       `Pump State V2: ${PUMP_V2_SHADOW_ENABLED ? 'ON' : 'OFF'} | активных ${pumpV2Count} | alerts OFF`,
+      `Market Context V1: ${MARKET_CONTEXT_V1_ENABLED ? 'ON (research only)' : 'OFF'}`,
       `Ручные позиции: ${positions?.length || 0}`,
       'Live-сделки на Bybit: OFF',
     ].join('\n');

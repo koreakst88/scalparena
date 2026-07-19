@@ -70,6 +70,13 @@ scheduler._recordCandidateV2Shadow([{ telegram_id: '42' }])
         name: 'Shadow recording sends no Telegram messages',
         pass: telegramMessages === 0,
       },
+      {
+        name: 'Insufficient BTC history is stored as UNKNOWN research context',
+        pass: tracked.every((item) => (
+          item.signal.signalMetadata?.marketContext?.state === 'UNKNOWN' &&
+          item.signal.signalMetadata?.marketContext?.decision === 'UNKNOWN'
+        )),
+      },
     ];
 
     checks.forEach((check) => console.log(`   ${check.pass ? 'PASS' : 'FAIL'} ${check.name}`));

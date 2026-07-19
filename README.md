@@ -27,6 +27,7 @@ PAPER_SIGNAL_AUTO_LOG_ENABLED=true
 PAPER_SIGNAL_ALERTS_ENABLED=true
 PAPER_SIGNAL_EXPERIMENT_ID=SCALPARENA_V2_20260719
 PAPER_SIGNAL_SLIPPAGE_BPS=5
+MARKET_CONTEXT_V1_ENABLED=true
 ```
 
 После этого `/scan` и авто-скан будут записывать paper-сигналы, tracker будет отмечать `TP_HIT`, `SL_HIT` или `TIMEOUT`. Обычные `/signals 7`, `/signals candidates 30` и `/signals pump all` показывают текущий эксперимент. Архив доступен через `/signals legacy candidates 30`, а объединённая история через `/signals history pump all`.
@@ -36,6 +37,8 @@ PAPER_SIGNAL_SLIPPAGE_BPS=5
 Candidate Engine и PumpHunter изолированы по `project` и `experiment_id`: активный сигнал одного проекта не блокирует такую же пару в другом проекте. Защита от повторных активных сигналов продолжает действовать внутри каждого проекта.
 
 Paper tracker проверяет OHLC-путь после входа и использует `high/low` свечей для TP, SL, MFE и MAE. Если одна свеча пересекла оба уровня, порядок считается неоднозначным и консервативно записывается `SL_HIT`. Источник свечей соответствует сохранённому `market_source`; snapshot текущей цены остаётся резервным способом проверки.
+
+Market Context V1 размечает shadow-сигналы по состоянию BTC (`RISK_ON`, `RISK_OFF`, `NEUTRAL`, `HIGH_VOL`) и исследовательскому решению (`ALLOW`, `CAUTION`, `BLOCK`). На первом этапе эта метка не блокирует запись сигнала: она нужна для сравнения статистики без подгонки результата.
 
 Обычный `/signals` показывает фактическую paper P&L-модель отдельно от MFE-потенциала: результат по сохранённой цене выхода, taker-комиссии, adverse slippage и портфельный лимит в две одновременные позиции. `PAPER_SIGNAL_SLIPPAGE_BPS` задаёт проскальзывание на каждую сторону сделки; значение по умолчанию — 5 bps.
 

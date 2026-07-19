@@ -24,6 +24,21 @@ function buildCandles({ start = 1, end = 1.32, low = 1, high = 1.33, recentVolum
   return candles;
 }
 
+function buildBtcCandles() {
+  return Array.from({ length: 60 }, (_, index) => {
+    const close = 60000 * (1 + (index ** 2) * 0.00005);
+    return {
+      timestamp: index * 15 * 60000,
+      open: close * 0.9998,
+      high: close * 1.001,
+      low: close * 0.999,
+      close,
+      volume: 1000 + index,
+      confirm: true,
+    };
+  });
+}
+
 console.log('🧪 Pump Hunter Engine Test\n');
 
 const strongTicker = {
@@ -40,6 +55,11 @@ const extendedTicker = {
   symbol: 'LATEUSDT',
   price24hPcnt: '1.4',
   turnover24h: '8000000',
+};
+const btcTicker = {
+  symbol: 'BTCUSDT',
+  price24hPcnt: '0.03',
+  turnover24h: '1000000000',
 };
 
 const strong = PumpHunterEngine.analyzeSymbol('RAVEUSDT', strongTicker, buildCandles());
@@ -60,8 +80,8 @@ const emptyMessage = PumpHunterFormatter.formatTop([], []);
 
 const fallbackReportsPromise = PumpHunterEngine.scan({
   getLinearTickers: async () => [],
-  getBinanceFuturesTickers: async () => [strongTicker],
-  getBinanceFuturesKlines: async () => buildCandles(),
+  getBinanceFuturesTickers: async () => [strongTicker, btcTicker],
+  getBinanceFuturesKlines: async (symbol) => symbol === 'BTCUSDT' ? buildBtcCandles() : buildCandles(),
 }, {
   scanLimit: 3,
   fallbackMarket: 'binance',
@@ -69,8 +89,8 @@ const fallbackReportsPromise = PumpHunterEngine.scan({
 const okxFallbackReportsPromise = PumpHunterEngine.scan({
   getLinearTickers: async () => [],
   getBinanceFuturesTickers: async () => [],
-  getOkxSwapTickers: async () => [strongTicker],
-  getOkxSwapKlines: async () => buildCandles(),
+  getOkxSwapTickers: async () => [strongTicker, btcTicker],
+  getOkxSwapKlines: async (symbol) => symbol === 'BTCUSDT' ? buildBtcCandles() : buildCandles(),
 }, {
   scanLimit: 3,
   fallbackMarket: 'binance,okx',
@@ -93,6 +113,11 @@ const okxFallbackReportsPromise = PumpHunterEngine.scan({
     { name: 'Binance fallback is used when Bybit tickers are unavailable', pass: fallbackReports[0]?.marketSource === 'BINANCE_FUTURES_FALLBACK' },
     { name: 'OKX fallback is used when Bybit and Binance are unavailable', pass: okxFallbackReports[0]?.marketSource === 'OKX_SWAP_FALLBACK' },
     { name: 'Legacy scan attaches V2 state without changing V1 action', pass: fallbackReports[0]?.shadowV2?.strategy === 'PUMP_STATE_V2_SHADOW' },
+    {
+      name: 'Pump V2 report carries BTC context without changing V1 action',
+      pass: fallbackReports[0]?.shadowV2?.marketContext?.state === 'RISK_ON' &&
+        fallbackReports[0]?.action === strong.action,
+    },
   ];
 
   console.log('🎯 Final checks:');
