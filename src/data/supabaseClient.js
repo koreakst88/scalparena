@@ -234,7 +234,7 @@ class SupabaseClient {
     );
   }
 
-  async getActivePaperSignals(userId = null) {
+  async getActivePaperSignals(userId = null, filters = {}) {
     let query = this.client
       .from('paper_signals')
       .select('*')
@@ -243,6 +243,14 @@ class SupabaseClient {
 
     if (userId) {
       query = query.eq('user_id', String(userId));
+    }
+
+    if (filters.project) {
+      query = query.eq('project', filters.project);
+    }
+
+    if (filters.experimentId) {
+      query = query.eq('experiment_id', filters.experimentId);
     }
 
     const { data, error } = await query;

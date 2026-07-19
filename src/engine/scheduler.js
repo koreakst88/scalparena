@@ -25,6 +25,10 @@ const {
   PUMP_AUTO_COOLDOWN_MINUTES,
   PUMP_AUTO_MAX_ALERTS,
 } = require('../config/pumpHunter');
+const {
+  CURRENT_PAPER_EXPERIMENT_ID,
+  PAPER_PROJECTS,
+} = require('../config/paperExperiment');
 
 const SCAN_INTERVAL_MS = 15 * 60 * 1000;
 const SEOUL_TIMEZONE = process.env.TIMEZONE || 'Asia/Seoul';
@@ -228,7 +232,10 @@ class Scheduler {
   async _sendPumpAlertsToUser(user, candidates) {
     const userId = String(user.telegram_id);
     const activeSignals = PAPER_SIGNAL_TRACKING_ENABLED
-      ? await this.db.getActivePaperSignals(userId)
+      ? await this.db.getActivePaperSignals(userId, {
+        project: PAPER_PROJECTS.PUMP,
+        experimentId: CURRENT_PAPER_EXPERIMENT_ID,
+      })
       : [];
     const activePairs = new Set(
       activeSignals.map((signal) => this._normalizePair(signal.pair))
@@ -238,7 +245,7 @@ class Scheduler {
       const pair = this._normalizePair(candidate.pair);
 
       if (activePairs.has(pair)) {
-        console.log(`🧪 Pump ${pair} skipped for ${userId}: active paper signal exists`);
+        console.log(`🧪 Pump ${pair} skipped for ${userId}: active Pump paper signal exists`);
         return false;
       }
 
@@ -313,7 +320,10 @@ class Scheduler {
   async _sendCandidateAlertsToUser(user, candidates) {
     const userId = String(user.telegram_id);
     const activeSignals = PAPER_SIGNAL_TRACKING_ENABLED
-      ? await this.db.getActivePaperSignals(userId)
+      ? await this.db.getActivePaperSignals(userId, {
+        project: PAPER_PROJECTS.CANDIDATE,
+        experimentId: CURRENT_PAPER_EXPERIMENT_ID,
+      })
       : [];
     const activePairs = new Set(
       activeSignals.map((signal) => this._normalizePair(signal.pair))
@@ -323,7 +333,7 @@ class Scheduler {
       const pair = this._normalizePair(candidate.pair);
 
       if (activePairs.has(pair)) {
-        console.log(`🧪 Candidate ${pair} skipped for ${userId}: active paper signal exists`);
+        console.log(`🧪 Candidate ${pair} skipped for ${userId}: active Candidate paper signal exists`);
         return false;
       }
 
