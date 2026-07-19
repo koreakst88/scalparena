@@ -26,4 +26,9 @@ module.exports = {
   PUMP_AUTO_MIN_SCORE: parsePositiveInt(process.env.PUMP_AUTO_MIN_SCORE, 80),
   PUMP_AUTO_COOLDOWN_MINUTES: parsePositiveInt(process.env.PUMP_AUTO_COOLDOWN_MINUTES, 180),
   PUMP_AUTO_MAX_ALERTS: parsePositiveInt(process.env.PUMP_AUTO_MAX_ALERTS, 1),
+  PUMP_V2_SHADOW_ENABLED: parseBoolean(process.env.PUMP_V2_SHADOW_ENABLED, true),
+  PUMP_V2_SHADOW_MAX_PER_CYCLE: parsePositiveInt(
+    process.env.PUMP_V2_SHADOW_MAX_PER_CYCLE,
+    2
+  ),
 };

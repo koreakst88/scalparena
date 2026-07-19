@@ -6,6 +6,7 @@ const PAPER_PROJECTS = {
   CANDIDATE: 'CANDIDATE',
   CANDIDATE_V2_SHADOW: 'CANDIDATE_V2_SHADOW',
   PUMP: 'PUMP',
+  PUMP_V2_SHADOW: 'PUMP_V2_SHADOW',
   HYBRID: 'HYBRID',
 };
 
@@ -15,11 +16,16 @@ const PAPER_STRATEGY_VERSIONS = {
   TREND_PULLBACK: 'candidate_trend_pullback_v1_tightened',
   MEAN_REVERSION: 'candidate_mean_reversion_v1_restricted',
   PUMP_HUNTER: 'pump_continuation_v2_dynamic_exits',
+  PUMP_STATE_V2_SHADOW: 'pump_state_machine_v2_shadow',
 };
 
 function getPaperProject(signal = {}, source = '') {
   if (signal.strategy === 'BREAKOUT_V2_SHADOW' || source === 'CANDIDATE_V2_SHADOW') {
     return PAPER_PROJECTS.CANDIDATE_V2_SHADOW;
+  }
+
+  if (signal.strategy === 'PUMP_STATE_V2_SHADOW' || source === 'PUMP_V2_SHADOW') {
+    return PAPER_PROJECTS.PUMP_V2_SHADOW;
   }
 
   if (signal.strategy === 'PUMP_HUNTER' || ['PUMP_HUNTER', 'PUMP_AUTO'].includes(source)) {

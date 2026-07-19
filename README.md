@@ -86,6 +86,8 @@ PUMP_HUNTER_KLINE_LIMIT=96
 PUMP_HUNTER_ACTIONABLE_LIMIT=3
 PUMP_HUNTER_USE_TESTNET=false
 PUMP_HUNTER_REST_BASES=api.bybit.com,api.bytick.com,api.bytick.nl,api.bybit-tr.com,api.bybit.kz
+PUMP_V2_SHADOW_ENABLED=true
+PUMP_V2_SHADOW_MAX_PER_CYCLE=2
 ```
 
 Telegram команды:
@@ -97,6 +99,8 @@ Telegram команды:
 - `/signals pump edge 7` - посмотреть MFE/плюсовые движения PumpHunter и money model
 
 Логика v3: ищем монеты, которые уже дали fresh move от локального low, но еще не выглядят слишком поздними. PumpHunter строит динамический exit plan: TP1 +2%, TP2 +3%, main TP +3/+5/+8% по силе сетапа, SL -4/-5/-6%, moon level +20% считается отдельно как бонус-уровень. `/signals pump edge` считает MFE-потенциал и денежную модель по текущему балансу, margin/leverage из RiskManager, комиссии включены. Live Bybit orders OFF.
+
+Pump State Machine V2 работает параллельно и не меняет основной PumpHunter. Он требует последовательность ignition → breakout → low-volume retest → reclaim, пишет только `ENTRY_READY` в отдельный silent shadow-проект и не отправляет Telegram-алерты. Отчёт: `/signals pump_v2 7`.
 
 ## Deployment
 

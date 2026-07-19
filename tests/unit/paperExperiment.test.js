@@ -31,6 +31,13 @@ const checks = [
       'candidate_breakout_v2_shadow',
   },
   {
+    name: 'Pump State V2 shadow has an isolated project and version',
+    pass: getPaperProject({ strategy: 'PUMP_STATE_V2_SHADOW' }, 'PUMP_V2_SHADOW') ===
+      'PUMP_V2_SHADOW' &&
+      getPaperStrategyVersion({ strategy: 'PUMP_STATE_V2_SHADOW' }) ===
+      'pump_state_machine_v2_shadow',
+  },
+  {
     name: 'Each paper strategy gets an explicit version',
     pass: getPaperStrategyVersion({ strategy: 'BREAKOUT' }) === 'candidate_breakout_v1' &&
       getPaperStrategyVersion({ strategy: 'PUMP_HUNTER' }) === 'pump_continuation_v2_dynamic_exits',

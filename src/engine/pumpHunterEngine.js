@@ -1,3 +1,5 @@
+const PumpStateMachineV2 = require('./pumpStateMachineV2');
+
 const DEFAULT_SCAN_LIMIT = 60;
 const DEFAULT_KLINE_INTERVAL = '15';
 const DEFAULT_KLINE_LIMIT = 96;
@@ -30,9 +32,14 @@ class PumpHunterEngine {
 
     for (const ticker of symbols) {
       const candles = await this._loadCandles(provider, marketSource, ticker.symbol, options);
+      const shadowV2 = PumpStateMachineV2.analyzeSymbol(ticker.symbol, ticker, candles, {
+        marketSource,
+        timeframe: options.interval || DEFAULT_KLINE_INTERVAL,
+      });
       reports.push({
         ...this.analyzeSymbol(ticker.symbol, ticker, candles),
         marketSource,
+        shadowV2,
       });
     }
 

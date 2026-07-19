@@ -37,6 +37,8 @@ const {
   PUMP_AUTO_MIN_SCORE,
   PUMP_AUTO_COOLDOWN_MINUTES,
   PUMP_AUTO_MAX_ALERTS,
+  PUMP_V2_SHADOW_ENABLED,
+  PUMP_V2_SHADOW_MAX_PER_CYCLE,
 } = require('../config/pumpHunter');
 const {
   PAPER_SIGNAL_TRACKING_ENABLED,
@@ -487,6 +489,7 @@ ${paperSignal ? '\n🧪 Paper signal записан для отслеживан�
     const candidateCount = PaperSignalStats.filterByProject(currentSignals, 'candidates').length;
     const candidateV2Count = PaperSignalStats.filterByProject(currentSignals, 'candidate_v2').length;
     const pumpCount = PaperSignalStats.filterByProject(currentSignals, 'pump').length;
+    const pumpV2Count = PaperSignalStats.filterByProject(currentSignals, 'pump_v2').length;
     const hybridCount = PaperSignalStats.filterByProject(currentSignals, 'hybrid').length;
     const schedulerStatus = this.scheduler?.getStatus?.() || {};
 
@@ -503,6 +506,7 @@ ${paperSignal ? '\n🧪 Paper signal записан для отслеживан�
       `Эксперимент: ${CURRENT_PAPER_EXPERIMENT_ID}`,
       `Активные: Candidate ${candidateCount} | Pump ${pumpCount} | Hybrid ${hybridCount}`,
       `Shadow V2: ${CANDIDATE_V2_SHADOW_ENABLED ? 'ON' : 'OFF'} | активных ${candidateV2Count} | alerts OFF`,
+      `Pump State V2: ${PUMP_V2_SHADOW_ENABLED ? 'ON' : 'OFF'} | активных ${pumpV2Count} | alerts OFF`,
       `Ручные позиции: ${positions?.length || 0}`,
       'Live-сделки на Bybit: OFF',
     ].join('\n');
@@ -1043,6 +1047,8 @@ ${insights}`
         project = 'candidates';
       } else if (['candidate_v2', 'candidates_v2', 'shadow'].includes(value)) {
         project = 'candidate_v2';
+      } else if (['pump_v2', 'pump_shadow', 'pump_state'].includes(value)) {
+        project = 'pump_v2';
       } else if (['hybrid', 'scan'].includes(value)) {
         project = 'hybrid';
       } else if (['current', 'new'].includes(value)) {
@@ -1065,6 +1071,7 @@ ${insights}`
       pump: 'PumpHunter',
       candidates: 'Candidate Engine',
       candidate_v2: 'Candidate Breakout V2 shadow',
+      pump_v2: 'Pump State Machine V2 shadow',
       hybrid: 'Hybrid scan',
     }[project] || project;
     const scopeTitle = {
@@ -1336,6 +1343,7 @@ ${insights}`
       `Фильтр: score >= ${PUMP_AUTO_MIN_SCORE}`,
       `Cooldown по паре: ${PUMP_AUTO_COOLDOWN_MINUTES} мин`,
       `Макс алертов за цикл: ${PUMP_AUTO_MAX_ALERTS}`,
+      `State V2 shadow: ${PUMP_V2_SHADOW_ENABLED ? 'ON' : 'OFF'} | max ${PUMP_V2_SHADOW_MAX_PER_CYCLE} записей | alerts OFF`,
       `Fallback market data: ${PUMP_HUNTER_FALLBACK_MARKET}`,
       'Live Bybit orders: OFF',
       '',
@@ -1865,13 +1873,13 @@ Exit:  \`$${price}\`
     if (!PAPER_SIGNAL_TRACKING_ENABLED || !signal) return null;
 
     const now = new Date();
-    const ttlMinutes = signal.strategy === 'PUMP_HUNTER'
+    const project = getPaperProject(signal, source);
+    const ttlMinutes = ['PUMP', 'PUMP_V2_SHADOW'].includes(project)
       ? PUMP_HUNTER_SIGNAL_TTL_MINUTES
       : PAPER_SIGNAL_TTL_MINUTES;
     const expiresAt = new Date(now.getTime() + ttlMinutes * 60 * 1000);
-    const project = getPaperProject(signal, source);
     const timeframe = signal.timeframe || (
-      project === 'PUMP'
+      ['PUMP', 'PUMP_V2_SHADOW'].includes(project)
         ? PUMP_HUNTER_KLINE_INTERVAL
         : process.env.BYBIT_WS_INTERVAL || '1'
     );

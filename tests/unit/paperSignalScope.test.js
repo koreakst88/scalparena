@@ -7,6 +7,7 @@ const current = bot._parsePaperSignalStatsArgs(['pump', 'edge', '7']);
 const legacy = bot._parsePaperSignalStatsArgs(['legacy', 'candidates', '30']);
 const history = bot._parsePaperSignalStatsArgs(['history', 'pump', 'all']);
 const shadow = bot._parsePaperSignalStatsArgs(['candidate_v2', 'detail', '7']);
+const pumpShadow = bot._parsePaperSignalStatsArgs(['pump_v2', 'edge', '30']);
 
 const checks = [
   {
@@ -28,6 +29,10 @@ const checks = [
   {
     name: 'Shadow report has an isolated project selector',
     pass: shadow.project === 'candidate_v2' && shadow.mode === 'detail' && shadow.period === '7',
+  },
+  {
+    name: 'Pump shadow report has an isolated project selector',
+    pass: pumpShadow.project === 'pump_v2' && pumpShadow.mode === 'edge' && pumpShadow.period === '30',
   },
   {
     name: 'Legacy title is explicit',

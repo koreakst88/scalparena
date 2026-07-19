@@ -82,6 +82,18 @@ const shadowSourceSignals = [
 ];
 const shadowSignals = PaperSignalStats.filterByProject(shadowSourceSignals, 'candidate_v2');
 const defaultSignals = PaperSignalStats.filterByProject(shadowSourceSignals, 'all');
+const pumpShadowSourceSignals = [
+  ...shadowSourceSignals,
+  {
+    pair: 'PUMPV2USDT',
+    project: 'PUMP_V2_SHADOW',
+    strategy: 'PUMP_STATE_V2_SHADOW',
+    source: 'PUMP_V2_SHADOW',
+    status: 'WATCHING',
+  },
+];
+const pumpShadowSignals = PaperSignalStats.filterByProject(pumpShadowSourceSignals, 'pump_v2');
+const publicProjectSignals = PaperSignalStats.filterByProject(pumpShadowSourceSignals, 'all');
 const watchingMessage = PaperSignalStats.formatWatching(pumpSignals, 'последние 7 дн. | PumpHunter');
 const detailMessage = PaperSignalStats.formatDetail(candidateSignals, 'последние 7 дн. | Candidate Engine');
 const edgeMessage = PaperSignalStats.formatEdge(pumpSignals, 'последние 7 дн. | PumpHunter', { balance: 200 });
@@ -147,6 +159,8 @@ const checks = [
   { name: 'candidate filter keeps Candidate Engine source', pass: candidateSignals.length === 1 && candidateSignals[0].pair === 'KGENUSDT' },
   { name: 'shadow filter keeps only Candidate V2 research rows', pass: shadowSignals.length === 1 && shadowSignals[0].pair === 'SHADOWUSDT' },
   { name: 'default reports exclude silent shadow rows', pass: defaultSignals.length === signals.length },
+  { name: 'pump shadow filter keeps only State V2 rows', pass: pumpShadowSignals.length === 1 && pumpShadowSignals[0].pair === 'PUMPV2USDT' },
+  { name: 'default reports exclude both shadow projects', pass: publicProjectSignals.length === signals.length },
   { name: 'watching message lists active pump signal', pass: watchingMessage.includes('HUSDT') && watchingMessage.includes('PUMP_AUTO') },
   { name: 'detail message includes MFE/MAE diagnostics', pass: detailMessage.includes('PAPER DETAIL') && detailMessage.includes('Avg MFE') },
   { name: 'edge message includes MFE thresholds', pass: edgeMessage.includes('PAPER EDGE') && edgeMessage.includes('>=5% MFE') && edgeMessage.includes('MFE пороги') },

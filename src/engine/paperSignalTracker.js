@@ -240,14 +240,21 @@ class PaperSignalTracker {
   }
 
   _isPumpHunterSignal(signal) {
-    return signal.strategy === 'PUMP_HUNTER' || ['PUMP_HUNTER', 'PUMP_AUTO'].includes(signal.source);
+    return (
+      ['PUMP_HUNTER', 'PUMP_STATE_V2_SHADOW'].includes(signal.strategy) ||
+      ['PUMP_HUNTER', 'PUMP_AUTO', 'PUMP_V2_SHADOW'].includes(signal.source) ||
+      ['PUMP', 'PUMP_V2_SHADOW'].includes(signal.project)
+    );
   }
 
   _isSilentShadowSignal(signal) {
     return (
       signal.project === 'CANDIDATE_V2_SHADOW' ||
       signal.strategy === 'BREAKOUT_V2_SHADOW' ||
-      signal.source === 'CANDIDATE_V2_SHADOW'
+      signal.source === 'CANDIDATE_V2_SHADOW' ||
+      signal.project === 'PUMP_V2_SHADOW' ||
+      signal.strategy === 'PUMP_STATE_V2_SHADOW' ||
+      signal.source === 'PUMP_V2_SHADOW'
     );
   }
 

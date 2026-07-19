@@ -32,6 +32,14 @@ class PaperSignalStats {
       ));
     }
 
+    if (['pump_v2', 'pump_shadow', 'pump_state'].includes(normalized)) {
+      return signals.filter((signal) => (
+        signal.project === 'PUMP_V2_SHADOW' ||
+        signal.strategy === 'PUMP_STATE_V2_SHADOW' ||
+        signal.source === 'PUMP_V2_SHADOW'
+      ));
+    }
+
     if (normalized === 'pump') {
       return signals.filter((signal) => (
         signal.project === 'PUMP' ||
@@ -57,7 +65,10 @@ class PaperSignalStats {
     return signals.filter((signal) => (
       signal.project !== 'CANDIDATE_V2_SHADOW' &&
       signal.strategy !== 'BREAKOUT_V2_SHADOW' &&
-      signal.source !== 'CANDIDATE_V2_SHADOW'
+      signal.source !== 'CANDIDATE_V2_SHADOW' &&
+      signal.project !== 'PUMP_V2_SHADOW' &&
+      signal.strategy !== 'PUMP_STATE_V2_SHADOW' &&
+      signal.source !== 'PUMP_V2_SHADOW'
     ));
   }
 

@@ -4,6 +4,7 @@ const SignalDetector = require('./signalDetector');
 const CandidateEngine = require('./candidateEngine');
 const CandidateBreakoutV2 = require('./candidateBreakoutV2');
 const PumpHunterEngine = require('./pumpHunterEngine');
+const PumpStateMachineV2 = require('./pumpStateMachineV2');
 const RiskManager = require('./riskManager');
 const {
   PAPER_SIGNAL_TRACKING_ENABLED,
@@ -27,6 +28,8 @@ const {
   PUMP_AUTO_MIN_SCORE,
   PUMP_AUTO_COOLDOWN_MINUTES,
   PUMP_AUTO_MAX_ALERTS,
+  PUMP_V2_SHADOW_ENABLED,
+  PUMP_V2_SHADOW_MAX_PER_CYCLE,
 } = require('../config/pumpHunter');
 const {
   CURRENT_PAPER_EXPERIMENT_ID,
@@ -203,6 +206,7 @@ class Scheduler {
         klineLimit: PUMP_HUNTER_KLINE_LIMIT,
         fallbackMarket: PUMP_HUNTER_FALLBACK_MARKET,
       });
+      await this._recordPumpV2Shadow(enabledUsers, reports);
       const candidates = this._getStrictPumpAlerts(reports);
 
       if (!candidates.length) {
@@ -289,6 +293,62 @@ class Scheduler {
     return PumpHunterEngine.getActionable(reports, PUMP_HUNTER_ACTIONABLE_LIMIT)
       .filter((candidate) => candidate.score >= PUMP_AUTO_MIN_SCORE)
       .slice(0, PUMP_AUTO_MAX_ALERTS);
+  }
+
+  async _recordPumpV2Shadow(users = [], reports = []) {
+    if (!PUMP_V2_SHADOW_ENABLED || !PAPER_SIGNAL_TRACKING_ENABLED) return;
+
+    const candidates = PumpStateMachineV2.getEntryReady(
+      reports,
+      PUMP_V2_SHADOW_MAX_PER_CYCLE
+    );
+    const stateSummary = this._formatPumpV2Diagnostics(reports);
+
+    if (!candidates.length) {
+      console.log(`🧬 Pump State V2 shadow: no ENTRY_READY | ${stateSummary}`);
+      return;
+    }
+
+    console.log(`🧬 Pump State V2 shadow: ${candidates.length} ENTRY_READY | ${stateSummary}`);
+
+    for (const user of users) {
+      const userId = String(user.telegram_id);
+      const activeSignals = await this.db.getActivePaperSignals(userId, {
+        project: PAPER_PROJECTS.PUMP_V2_SHADOW,
+        experimentId: CURRENT_PAPER_EXPERIMENT_ID,
+      });
+      const activePairs = new Set(activeSignals.map((signal) => this._normalizePair(signal.pair)));
+      let savedCount = 0;
+
+      for (const candidate of candidates) {
+        if (activePairs.has(this._normalizePair(candidate.pair))) continue;
+
+        const saved = await this.bot._trackPaperSignal(
+          userId,
+          PumpStateMachineV2.toPaperSignal(candidate),
+          'PUMP_V2_SHADOW'
+        );
+        if (saved) {
+          savedCount += 1;
+          activePairs.add(this._normalizePair(candidate.pair));
+        }
+      }
+
+      console.log(`🧬 Pump State V2 shadow: saved ${savedCount} signal(s) for ${userId}; alerts=OFF`);
+    }
+  }
+
+  _formatPumpV2Diagnostics(reports = []) {
+    const counts = reports.reduce((result, report) => {
+      const state = report.shadowV2?.state || 'NO_STATE';
+      result[state] = (result[state] || 0) + 1;
+      return result;
+    }, {});
+
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([state, count]) => `${state}=${count}`)
+      .join(', ');
   }
 
   async _sendPumpAlertsToUser(user, candidates) {

@@ -211,6 +211,11 @@ Promise.resolve()
     name: 'Shadow outcomes are tracked without Telegram alerts',
     pass: shadowAlerts === 0,
   },
+  {
+    name: 'Pump V2 is recognized as source-aware and silent',
+    pass: tracker._isPumpHunterSignal({ project: 'PUMP_V2_SHADOW' }) &&
+      tracker._isSilentShadowSignal({ source: 'PUMP_V2_SHADOW' }),
+  },
     ];
 
     console.log('🎯 Final checks:');
