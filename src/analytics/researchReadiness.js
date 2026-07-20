@@ -9,7 +9,7 @@ class ResearchReadiness {
     const projectTarget = this._positiveInteger(options.projectTarget, DEFAULT_PROJECT_TARGET);
     const decisionTarget = this._positiveInteger(options.decisionTarget, DEFAULT_DECISION_TARGET);
     const projects = [
-      this._summarizeProject('Candidate V2', PaperSignalStats.filterByProject(signals, 'candidate_v2')),
+      this._summarizeProject('Candidate V3', PaperSignalStats.filterByProject(signals, 'candidate_v3')),
       this._summarizeProject('Pump V2', PaperSignalStats.filterByProject(signals, 'pump_v2')),
     ];
     const decisions = this._emptyDecisionCounts();
@@ -40,7 +40,7 @@ class ResearchReadiness {
     const lines = [
       '🔬 RESEARCH READINESS',
       '━━━━━━━━━━━━━━━━━━━━',
-      `Эксперимент: ${readiness.experimentId || 'current'}`,
+      `Эксперименты: ${readiness.experimentId || 'current project cohorts'}`,
       `Цель: ≥${readiness.projectTarget} resolved на проект; ≥${readiness.decisionTarget} resolved на BTC-группу`,
     ];
 

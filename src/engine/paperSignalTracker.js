@@ -252,6 +252,9 @@ class PaperSignalTracker {
       signal.project === 'CANDIDATE_V2_SHADOW' ||
       signal.strategy === 'BREAKOUT_V2_SHADOW' ||
       signal.source === 'CANDIDATE_V2_SHADOW' ||
+      signal.project === 'CANDIDATE_V3' ||
+      signal.strategy === 'BREAKOUT_V3_SHADOW' ||
+      signal.source === 'CANDIDATE_V3' ||
       signal.project === 'PUMP_V2_SHADOW' ||
       signal.strategy === 'PUMP_STATE_V2_SHADOW' ||
       signal.source === 'PUMP_V2_SHADOW'

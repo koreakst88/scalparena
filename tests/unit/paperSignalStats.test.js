@@ -72,7 +72,7 @@ const signals = [
 const stats = PaperSignalStats.calculate(signals);
 const message = PaperSignalStats.format(stats, 'последние 7 дн.');
 const pumpSignals = PaperSignalStats.filterByProject(signals, 'pump');
-const candidateSignals = PaperSignalStats.filterByProject(signals, 'candidates');
+const candidateSignals = PaperSignalStats.filterByProject(signals, 'candidate_v1');
 const shadowSourceSignals = [
   ...signals,
   {
@@ -86,6 +86,17 @@ const shadowSourceSignals = [
     },
   },
 ];
+const v3SourceSignals = [
+  ...shadowSourceSignals,
+  {
+    pair: 'V3USDT',
+    project: 'CANDIDATE_V3',
+    strategy: 'BREAKOUT_V3_SHADOW',
+    source: 'CANDIDATE_V3',
+    status: 'WATCHING',
+  },
+];
+const v3Signals = PaperSignalStats.filterByProject(v3SourceSignals, 'candidate');
 const shadowSignals = PaperSignalStats.filterByProject(shadowSourceSignals, 'candidate_v2');
 const shadowStats = PaperSignalStats.calculate(shadowSignals);
 const shadowMessage = PaperSignalStats.format(shadowStats, 'Candidate V2 shadow');
@@ -167,6 +178,7 @@ const checks = [
   { name: 'strategy grouping exists', pass: stats.byStrategy[0].total === 2 },
   { name: 'pump filter keeps only PumpHunter', pass: pumpSignals.length === 1 && pumpSignals[0].pair === 'HUSDT' },
   { name: 'candidate filter keeps Candidate Engine source', pass: candidateSignals.length === 1 && candidateSignals[0].pair === 'KGENUSDT' },
+  { name: 'default candidate selector points only to the new V3 cohort', pass: v3Signals.length === 1 && v3Signals[0].pair === 'V3USDT' },
   { name: 'shadow filter keeps only Candidate V2 research rows', pass: shadowSignals.length === 1 && shadowSignals[0].pair === 'SHADOWUSDT' },
   { name: 'shadow stats group by BTC context', pass: shadowStats.byMarketContext[0]?.label === 'HIGH_VOL' },
   { name: 'shadow stats group by research decision', pass: shadowStats.byMarketDecision[0]?.label === 'BLOCK' },

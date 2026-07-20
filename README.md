@@ -26,11 +26,12 @@ PAPER_SIGNAL_TRACKING_ENABLED=true
 PAPER_SIGNAL_AUTO_LOG_ENABLED=true
 PAPER_SIGNAL_ALERTS_ENABLED=true
 PAPER_SIGNAL_EXPERIMENT_ID=SCALPARENA_V2_20260719
+CANDIDATE_V3_EXPERIMENT_ID=CANDIDATE_V3_20260720
 PAPER_SIGNAL_SLIPPAGE_BPS=5
 MARKET_CONTEXT_V1_ENABLED=true
 ```
 
-После этого `/scan` и авто-скан будут записывать paper-сигналы, tracker будет отмечать `TP_HIT`, `SL_HIT` или `TIMEOUT`. Обычные `/signals 7`, `/signals candidates 30` и `/signals pump all` показывают текущий эксперимент. Архив доступен через `/signals legacy candidates 30`, а объединённая история через `/signals history pump all`.
+После этого `/scan` и авто-скан будут записывать paper-сигналы, tracker будет отмечать `TP_HIT`, `SL_HIT` или `TIMEOUT`. `/signals candidate 30` показывает только новую выборку Candidate V3, `/signals candidate_v2 30` — замороженную V2, а `/signals pump all` — текущий PumpHunter. Архив V1 доступен через `/signals legacy candidate_v1 30`.
 
 Старые записи сохраняются как `LEGACY_PRE_20260719`. Новые paper-сигналы получают отдельные `project`, `experiment_id`, версию стратегии, источник рынка, timeframe и параметры динамического выхода.
 
@@ -65,8 +66,8 @@ CANDIDATE_AUTO_MIN_SCORE=75
 CANDIDATE_AUTO_MIN_RR=1.2
 CANDIDATE_AUTO_COOLDOWN_MINUTES=90
 CANDIDATE_AUTO_MAX_ALERTS=2
-CANDIDATE_V2_SHADOW_ENABLED=true
-CANDIDATE_V2_SHADOW_MAX_PER_CYCLE=3
+CANDIDATE_V3_ENABLED=true
+CANDIDATE_V3_MAX_PER_CYCLE=1
 ```
 
 Telegram команды:
@@ -78,7 +79,7 @@ Telegram команды:
 
 Антиспам-фильтры: отправляются только готовые входы, пары с активным paper-сигналом пропускаются, по каждой паре действует cooldown.
 
-Candidate Breakout V2 работает параллельно в silent shadow-режиме. Он использует только подтверждённые WebSocket-свечи с реальным объёмом, проверяет настоящий пробой и удержание диапазона и сохраняет результаты отдельно. Он не меняет V1, не отправляет Telegram-алерты и доступен через `/signals candidate_v2 7`.
+Candidate V3 заменяет убыточный V2 в silent paper-режиме. Он ждёт закрытый пробой, отдельный ретест и возврат за уровень, использует 5-минутный тренд, ограничивает перегретый объём и поздний вход, ставит стоп за структурой ретеста и применяет BTC-контекст. Telegram-алерты и реальные сделки для V3 отключены. Новая выборка доступна через `/signals candidate 7`, старая V2 — только через `/signals candidate_v2 30`.
 
 ## PumpHunter Lab
 

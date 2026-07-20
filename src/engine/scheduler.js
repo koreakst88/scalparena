@@ -2,7 +2,7 @@
 
 const SignalDetector = require('./signalDetector');
 const CandidateEngine = require('./candidateEngine');
-const CandidateBreakoutV2 = require('./candidateBreakoutV2');
+const CandidateBreakoutV3 = require('./candidateBreakoutV3');
 const PumpHunterEngine = require('./pumpHunterEngine');
 const PumpStateMachineV2 = require('./pumpStateMachineV2');
 const MarketContextV1 = require('./marketContextV1');
@@ -16,8 +16,8 @@ const {
   CANDIDATE_AUTO_MIN_RR,
   CANDIDATE_AUTO_COOLDOWN_MINUTES,
   CANDIDATE_AUTO_MAX_ALERTS,
-  CANDIDATE_V2_SHADOW_ENABLED,
-  CANDIDATE_V2_SHADOW_MAX_PER_CYCLE,
+  CANDIDATE_V3_ENABLED,
+  CANDIDATE_V3_MAX_PER_CYCLE,
 } = require('../config/paperSignals');
 const {
   PUMP_HUNTER_SCAN_LIMIT,
@@ -34,6 +34,7 @@ const {
 } = require('../config/pumpHunter');
 const {
   CURRENT_PAPER_EXPERIMENT_ID,
+  CANDIDATE_V3_EXPERIMENT_ID,
   PAPER_PROJECTS,
 } = require('../config/paperExperiment');
 const { MARKET_CONTEXT_V1_ENABLED } = require('../config/marketContext');
@@ -162,7 +163,7 @@ class Scheduler {
       }
 
       const reports = CandidateEngine.scanAll(this.provider);
-      await this._recordCandidateV2Shadow(enabledUsers);
+      await this._recordCandidateV3(enabledUsers);
       const candidates = this._getStrictCandidateAlerts(reports);
 
       if (!candidates.length) {
@@ -233,62 +234,87 @@ class Scheduler {
       .slice(0, CANDIDATE_AUTO_MAX_ALERTS);
   }
 
-  async _recordCandidateV2Shadow(users = []) {
-    if (!CANDIDATE_V2_SHADOW_ENABLED || !PAPER_SIGNAL_TRACKING_ENABLED) return;
+  async _recordCandidateV3(users = []) {
+    if (!CANDIDATE_V3_ENABLED || !PAPER_SIGNAL_TRACKING_ENABLED) return;
 
-    const reports = CandidateBreakoutV2.scanAll(this.provider);
+    const reports = CandidateBreakoutV3.scanAll(this.provider);
     const marketContext = MARKET_CONTEXT_V1_ENABLED
       ? MarketContextV1.analyze(this.provider.getCandles('BTCUSDT', 100), {
         timeframe: String(process.env.BYBIT_WS_INTERVAL || '1'),
         source: 'BYBIT_WEBSOCKET',
       })
       : null;
-    const rawCandidates = CandidateBreakoutV2.getActionableCandidates(
+    const rawCandidates = CandidateBreakoutV3.getActionableCandidates(
       reports,
-      CANDIDATE_V2_SHADOW_MAX_PER_CYCLE
+      CANDIDATE_V3_MAX_PER_CYCLE
     );
-    const candidates = marketContext
+    const contextualCandidates = marketContext
       ? rawCandidates.map((candidate) => MarketContextV1.attach(candidate, marketContext))
       : rawCandidates;
+    const candidates = contextualCandidates.filter((candidate) => (
+      CandidateBreakoutV3.isAllowedByMarketContext(candidate)
+    ));
 
     if (!candidates.length) {
       console.log(
-        `🔬 Candidate V2 shadow: no qualified breakouts | ${this._formatShadowDiagnostics(reports)} | ` +
-        `market=${marketContext?.state || 'OFF'}`
+        `🔬 Candidate V3: no qualified retest entries | ${this._formatShadowDiagnostics(reports)} | ` +
+        `market=${marketContext?.state || 'OFF'} | contextRejected=${contextualCandidates.length}`
       );
       return;
     }
 
     console.log(
-      `🔬 Candidate V2 shadow: ${candidates.length} qualified setup(s) | ` +
+      `🔬 Candidate V3: ${candidates.length} qualified setup(s) | ` +
       `market=${marketContext?.state || 'OFF'} | ${this._formatContextDecisions(candidates)}`
     );
 
     for (const user of users) {
       const userId = String(user.telegram_id);
       const activeSignals = await this.db.getActivePaperSignals(userId, {
-        project: PAPER_PROJECTS.CANDIDATE_V2_SHADOW,
-        experimentId: CURRENT_PAPER_EXPERIMENT_ID,
+        project: PAPER_PROJECTS.CANDIDATE_V3,
+        experimentId: CANDIDATE_V3_EXPERIMENT_ID,
       });
       const activePairs = new Set(activeSignals.map((signal) => this._normalizePair(signal.pair)));
+      const recentSignals = await this.db.getPaperSignalsSince(
+        userId,
+        new Date(Date.now() - 12 * 60 * 60 * 1000)
+      );
       let savedCount = 0;
 
       for (const candidate of candidates) {
-        if (activePairs.has(this._normalizePair(candidate.pair))) continue;
+        const pair = this._normalizePair(candidate.pair);
+        if (activePairs.has(pair)) continue;
+        if (this._isCandidateV3PairCoolingDown(pair, recentSignals)) continue;
 
         const saved = await this.bot._trackPaperSignal(
           userId,
-          CandidateBreakoutV2.toPaperSignal(candidate),
-          'CANDIDATE_V2_SHADOW'
+          {
+            ...CandidateBreakoutV3.toPaperSignal(candidate),
+            experimentId: CANDIDATE_V3_EXPERIMENT_ID,
+          },
+          'CANDIDATE_V3'
         );
         if (saved) {
           savedCount += 1;
-          activePairs.add(this._normalizePair(candidate.pair));
+          activePairs.add(pair);
         }
       }
 
-      console.log(`🔬 Candidate V2 shadow: saved ${savedCount} signal(s) for ${userId}; alerts=OFF`);
+      console.log(`🔬 Candidate V3: saved ${savedCount} signal(s) for ${userId}; alerts=OFF`);
     }
+  }
+
+  _isCandidateV3PairCoolingDown(pair, signals = []) {
+    const now = Date.now();
+    return signals.some((signal) => {
+      if (signal.project !== PAPER_PROJECTS.CANDIDATE_V3) return false;
+      if (signal.experiment_id !== CANDIDATE_V3_EXPERIMENT_ID) return false;
+      if (this._normalizePair(signal.pair) !== pair) return false;
+      const createdAt = new Date(signal.created_at).getTime();
+      if (!Number.isFinite(createdAt)) return false;
+      const cooldownHours = signal.status === 'SL_HIT' ? 12 : 6;
+      return now - createdAt < cooldownHours * 60 * 60 * 1000;
+    });
   }
 
   _formatShadowDiagnostics(reports = []) {

@@ -12,9 +12,9 @@ bot.db = {
     return [
       {
         pair: 'CURRENTUSDT',
-        project: 'CANDIDATE_V2_SHADOW',
+        project: 'CANDIDATE_V3',
         status: 'TP_HIT',
-        experiment_id: 'SCALPARENA_V2_20260719',
+        experiment_id: 'CANDIDATE_V3_20260720',
         is_legacy: false,
         created_at: '2026-07-19T00:00:00Z',
         signal_metadata: { marketContext: { decision: 'ALLOW' } },
@@ -51,8 +51,8 @@ bot._sendResearchReadiness('42')
         pass: requestedSince instanceof Date && requestedSince.getTime() === 0,
       },
       {
-        name: 'Current Candidate V2 row enters the report',
-        pass: sentMessage.includes('Candidate V2: 1/30 resolved'),
+        name: 'Current Candidate V3 row enters the report',
+        pass: sentMessage.includes('Candidate V3: 1/30 resolved'),
       },
       {
         name: 'Legacy and V1 rows do not pollute Pump V2 readiness',
@@ -61,7 +61,8 @@ bot._sendResearchReadiness('42')
       },
       {
         name: 'Report identifies the active experiment',
-        pass: sentMessage.includes('SCALPARENA_V2_20260719'),
+        pass: sentMessage.includes('CANDIDATE_V3_20260720') &&
+          sentMessage.includes('SCALPARENA_V2_20260719'),
       },
     ];
 

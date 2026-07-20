@@ -24,6 +24,7 @@ const { CURRENT_STRATEGY_VERSION, LEGACY_STRATEGY_VERSION } = require('../config
 const { MARKET_CONTEXT_V1_ENABLED } = require('../config/marketContext');
 const {
   CURRENT_PAPER_EXPERIMENT_ID,
+  CANDIDATE_V3_EXPERIMENT_ID,
   getPaperProject,
   getPaperStrategyVersion,
 } = require('../config/paperExperiment');
@@ -51,8 +52,8 @@ const {
   CANDIDATE_AUTO_MIN_RR,
   CANDIDATE_AUTO_COOLDOWN_MINUTES,
   CANDIDATE_AUTO_MAX_ALERTS,
-  CANDIDATE_V2_SHADOW_ENABLED,
-  CANDIDATE_V2_SHADOW_MAX_PER_CYCLE,
+  CANDIDATE_V3_ENABLED,
+  CANDIDATE_V3_MAX_PER_CYCLE,
 } = require('../config/paperSignals');
 
 const BOT_COMMANDS = [
@@ -493,7 +494,12 @@ ${paperSignal ? '\n🧪 Paper signal записан для отслеживан�
       'current',
       CURRENT_PAPER_EXPERIMENT_ID
     );
-    const candidateCount = PaperSignalStats.filterByProject(currentSignals, 'candidates').length;
+    const candidateV3Signals = PaperSignalStats.filterByExperiment(
+      activeSignals,
+      'current',
+      CANDIDATE_V3_EXPERIMENT_ID
+    );
+    const candidateCount = PaperSignalStats.filterByProject(candidateV3Signals, 'candidate_v3').length;
     const candidateV2Count = PaperSignalStats.filterByProject(currentSignals, 'candidate_v2').length;
     const pumpCount = PaperSignalStats.filterByProject(currentSignals, 'pump').length;
     const pumpV2Count = PaperSignalStats.filterByProject(currentSignals, 'pump_v2').length;
@@ -510,9 +516,11 @@ ${paperSignal ? '\n🧪 Paper signal записан для отслеживан�
       `Последний цикл: ${this._formatStatusTime(schedulerStatus.lastPumpScan)}`,
       '',
       `Paper tracking: ${PAPER_SIGNAL_TRACKING_ENABLED ? 'ON' : 'OFF'}`,
-      `Эксперимент: ${CURRENT_PAPER_EXPERIMENT_ID}`,
+      `Candidate эксперимент: ${CANDIDATE_V3_EXPERIMENT_ID}`,
+      `Остальные проекты: ${CURRENT_PAPER_EXPERIMENT_ID}`,
       `Активные: Candidate ${candidateCount} | Pump ${pumpCount} | Hybrid ${hybridCount}`,
-      `Shadow V2: ${CANDIDATE_V2_SHADOW_ENABLED ? 'ON' : 'OFF'} | активных ${candidateV2Count} | alerts OFF`,
+      `Candidate V3: ${CANDIDATE_V3_ENABLED ? 'ON' : 'OFF'} | активных ${candidateCount} | alerts OFF`,
+      `Candidate V2: ARCHIVE | активных старых ${candidateV2Count}`,
       `Pump State V2: ${PUMP_V2_SHADOW_ENABLED ? 'ON' : 'OFF'} | активных ${pumpV2Count} | alerts OFF`,
       `Market Context V1: ${MARKET_CONTEXT_V1_ENABLED ? 'ON (research only)' : 'OFF'}`,
       `Ручные позиции: ${positions?.length || 0}`,
@@ -1003,13 +1011,12 @@ ${insights}`
 
   async _sendResearchReadiness(userId) {
     const signals = await this.db.getPaperSignalsSince(userId, new Date(0));
-    const currentSignals = PaperSignalStats.filterByExperiment(
-      signals,
-      'current',
-      CURRENT_PAPER_EXPERIMENT_ID
-    );
-    const readiness = ResearchReadiness.calculate(currentSignals, {
-      experimentId: CURRENT_PAPER_EXPERIMENT_ID,
+    const researchSignals = signals.filter((signal) => (
+      signal.experiment_id === CANDIDATE_V3_EXPERIMENT_ID ||
+      signal.experiment_id === CURRENT_PAPER_EXPERIMENT_ID
+    ));
+    const readiness = ResearchReadiness.calculate(researchSignals, {
+      experimentId: `${CANDIDATE_V3_EXPERIMENT_ID} + Pump ${CURRENT_PAPER_EXPERIMENT_ID}`,
     });
 
     await this._sendPlain(userId, ResearchReadiness.format(readiness));
@@ -1020,11 +1027,17 @@ ${insights}`
     const period = this._parseStatsPeriod(options.period);
     const statsUser = user || await this.db.getUser(userId);
     const signals = await this.db.getPaperSignalsSince(userId, period.since);
-    const experimentSignals = PaperSignalStats.filterByExperiment(
-      signals,
-      options.scope,
-      CURRENT_PAPER_EXPERIMENT_ID
-    );
+    const currentExperimentId = ['candidate_v3', 'candidates'].includes(options.project)
+      ? CANDIDATE_V3_EXPERIMENT_ID
+      : CURRENT_PAPER_EXPERIMENT_ID;
+    const experimentSignals = options.scope === 'current' && options.project === 'all'
+      ? signals.filter((signal) => (
+        signal.is_legacy === false && [
+          CURRENT_PAPER_EXPERIMENT_ID,
+          CANDIDATE_V3_EXPERIMENT_ID,
+        ].includes(signal.experiment_id)
+      ))
+      : PaperSignalStats.filterByExperiment(signals, options.scope, currentExperimentId);
     const projectSignals = PaperSignalStats.filterByProject(experimentSignals, options.project);
     const title = this._formatPaperSignalStatsTitle(
       period.title.replace(/[*📊]/g, '').replace('Период:', '').trim(),
@@ -1078,7 +1091,11 @@ ${insights}`
       } else if (['pump', 'pumphunter'].includes(value)) {
         project = 'pump';
       } else if (['candidate', 'candidates'].includes(value)) {
-        project = 'candidates';
+        project = 'candidate_v3';
+      } else if (['candidate_v3', 'candidates_v3'].includes(value)) {
+        project = 'candidate_v3';
+      } else if (['candidate_v1', 'candidates_v1'].includes(value)) {
+        project = 'candidate_v1';
       } else if (['candidate_v2', 'candidates_v2', 'shadow'].includes(value)) {
         project = 'candidate_v2';
       } else if (['pump_v2', 'pump_shadow', 'pump_state'].includes(value)) {
@@ -1096,6 +1113,7 @@ ${insights}`
       }
     });
 
+    if (scope === 'legacy' && project === 'candidate_v3') project = 'candidate_v1';
     return { mode, project, scope, period };
   }
 
@@ -1103,13 +1121,14 @@ ${insights}`
     const projectTitle = {
       all: 'все проекты',
       pump: 'PumpHunter',
-      candidates: 'Candidate Engine',
+      candidate_v3: 'Candidate V3',
+      candidate_v1: 'Candidate V1 alerts',
       candidate_v2: 'Candidate Breakout V2 shadow',
       pump_v2: 'Pump State Machine V2 shadow',
       hybrid: 'Hybrid scan',
     }[project] || project;
     const scopeTitle = {
-      current: 'текущий эксперимент',
+      current: project === 'all' ? 'текущие эксперименты' : 'текущий эксперимент',
       legacy: 'архив LEGACY',
       history: 'вся история',
     }[scope] || scope;
@@ -1393,7 +1412,8 @@ ${insights}`
       `Фильтр: score >= ${CANDIDATE_AUTO_MIN_SCORE}, RR >= ${CANDIDATE_AUTO_MIN_RR}`,
       `Cooldown по паре: ${CANDIDATE_AUTO_COOLDOWN_MINUTES} мин`,
       `Макс алертов за цикл: ${CANDIDATE_AUTO_MAX_ALERTS}`,
-      `Breakout V2 shadow: ${CANDIDATE_V2_SHADOW_ENABLED ? 'ON' : 'OFF'} | max ${CANDIDATE_V2_SHADOW_MAX_PER_CYCLE} записей | alerts OFF`,
+      `Candidate V3: ${CANDIDATE_V3_ENABLED ? 'ON' : 'OFF'} | max ${CANDIDATE_V3_MAX_PER_CYCLE} запись | alerts OFF`,
+      'Candidate V2: ARCHIVE, новые записи отключены',
       'Live Bybit orders: OFF',
       '',
       'Постоянно включить после redeploy: CANDIDATE_AUTO_SCAN_ENABLED=true в Railway Variables.',
@@ -1521,14 +1541,15 @@ ${insights}`
 /candidates — Candidate Engine сейчас
 /pump — PumpHunter сейчас
 /signals 7 — результаты текущего эксперимента
-/research — готовность выборки V2
+/research — готовность новых выборок
 /status — автопоиск, наблюдения и режимы
 
 Раздельные отчёты:
-/signals candidates 7
+/signals candidate 7
 /signals pump 7
 /signals pump edge 7
 /signals candidate_v2 detail 30
+/signals candidate_v1 detail 30
 /signals pump_v2 detail 30
 /signals open candidates
 /signals open pump
@@ -1619,7 +1640,7 @@ Live-сделки на Bybit отключены. Бот собирает и пр
     }
 
     if (data === 'candidates_stats') {
-      return this._sendPaperSignalStats(userId, ['candidates', '7']);
+      return this._sendPaperSignalStats(userId, ['candidate_v1', '7']);
     }
 
     if (data === 'pump_stats') {
@@ -1980,7 +2001,7 @@ Exit:  \`$${price}\`
       market_regime: signal.marketRegime,
       strategy_version: getPaperStrategyVersion(signal),
       project,
-      experiment_id: CURRENT_PAPER_EXPERIMENT_ID,
+      experiment_id: signal.experimentId || CURRENT_PAPER_EXPERIMENT_ID,
       is_legacy: false,
       market_source: signal.marketSource || (project === 'PUMP' ? 'UNKNOWN_PUBLIC_FALLBACK' : 'BYBIT_WEBSOCKET'),
       timeframe: String(timeframe),

@@ -1,10 +1,13 @@
 const CURRENT_PAPER_EXPERIMENT_ID = process.env.PAPER_SIGNAL_EXPERIMENT_ID ||
   'SCALPARENA_V2_20260719';
+const CANDIDATE_V3_EXPERIMENT_ID = process.env.CANDIDATE_V3_EXPERIMENT_ID ||
+  'CANDIDATE_V3_20260720';
 const LEGACY_PAPER_EXPERIMENT_ID = 'LEGACY_PRE_20260719';
 
 const PAPER_PROJECTS = {
   CANDIDATE: 'CANDIDATE',
   CANDIDATE_V2_SHADOW: 'CANDIDATE_V2_SHADOW',
+  CANDIDATE_V3: 'CANDIDATE_V3',
   PUMP: 'PUMP',
   PUMP_V2_SHADOW: 'PUMP_V2_SHADOW',
   HYBRID: 'HYBRID',
@@ -13,6 +16,7 @@ const PAPER_PROJECTS = {
 const PAPER_STRATEGY_VERSIONS = {
   BREAKOUT: 'candidate_breakout_v1',
   BREAKOUT_V2_SHADOW: 'candidate_breakout_v2_shadow',
+  BREAKOUT_V3_SHADOW: 'candidate_breakout_v3_retest',
   TREND_PULLBACK: 'candidate_trend_pullback_v1_tightened',
   MEAN_REVERSION: 'candidate_mean_reversion_v1_restricted',
   PUMP_HUNTER: 'pump_continuation_v2_dynamic_exits',
@@ -20,6 +24,10 @@ const PAPER_STRATEGY_VERSIONS = {
 };
 
 function getPaperProject(signal = {}, source = '') {
+  if (signal.strategy === 'BREAKOUT_V3_SHADOW' || source === 'CANDIDATE_V3') {
+    return PAPER_PROJECTS.CANDIDATE_V3;
+  }
+
   if (signal.strategy === 'BREAKOUT_V2_SHADOW' || source === 'CANDIDATE_V2_SHADOW') {
     return PAPER_PROJECTS.CANDIDATE_V2_SHADOW;
   }
@@ -45,6 +53,7 @@ function getPaperStrategyVersion(signal = {}) {
 
 module.exports = {
   CURRENT_PAPER_EXPERIMENT_ID,
+  CANDIDATE_V3_EXPERIMENT_ID,
   LEGACY_PAPER_EXPERIMENT_ID,
   PAPER_PROJECTS,
   PAPER_STRATEGY_VERSIONS,

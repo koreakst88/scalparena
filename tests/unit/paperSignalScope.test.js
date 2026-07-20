@@ -16,7 +16,7 @@ const checks = [
   },
   {
     name: 'Legacy report keeps project and period',
-    pass: legacy.scope === 'legacy' && legacy.project === 'candidates' && legacy.period === '30',
+    pass: legacy.scope === 'legacy' && legacy.project === 'candidate_v1' && legacy.period === '30',
   },
   {
     name: 'History scope preserves all-time period',

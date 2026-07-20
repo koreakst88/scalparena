@@ -1,5 +1,6 @@
 const {
   CURRENT_PAPER_EXPERIMENT_ID,
+  CANDIDATE_V3_EXPERIMENT_ID,
   getPaperProject,
   getPaperStrategyVersion,
 } = require('../../src/config/paperExperiment');
@@ -7,6 +8,13 @@ const {
 console.log('Paper Experiment Config Test\n');
 
 const checks = [
+  {
+    name: 'Candidate V3 starts a clean project-specific cohort',
+    pass: CANDIDATE_V3_EXPERIMENT_ID === 'CANDIDATE_V3_20260720' &&
+      getPaperProject({ strategy: 'BREAKOUT_V3_SHADOW' }, 'CANDIDATE_V3') === 'CANDIDATE_V3' &&
+      getPaperStrategyVersion({ strategy: 'BREAKOUT_V3_SHADOW' }) ===
+        'candidate_breakout_v3_retest',
+  },
   {
     name: 'Current experiment has a stable id',
     pass: CURRENT_PAPER_EXPERIMENT_ID === 'SCALPARENA_V2_20260719',
