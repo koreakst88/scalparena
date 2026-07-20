@@ -847,14 +847,16 @@ ${insights}
       fallbackMarket: PUMP_HUNTER_FALLBACK_MARKET,
     });
     const actionable = PumpHunterEngine.getActionable(reports, PUMP_HUNTER_ACTIONABLE_LIMIT);
-    const keyboard = this._getPumpHunterKeyboard(actionable.length);
+    const keyboard = this._getPumpHunterKeyboard(actionable.length, {
+      includeDetails: mode !== 'full',
+    });
 
     if (mode === 'full') {
       await this._sendPlainChunks(userId, PumpHunterFormatter.formatFull(reports));
       const message = await this._sendPlain(userId, '👇 Действия с текущим PumpHunter отчетом:', {
         reply_markup: keyboard,
       });
-      this._storePumpSnapshot(userId, message, reports, actionable);
+      this._storePumpSnapshot(userId, message, reports, actionable, mode);
       return message;
     }
 
@@ -864,14 +866,14 @@ ${insights}
       const message = await this._sendPlain(userId, PumpHunterFormatter.formatTop(reports, actionable), {
         reply_markup: keyboard,
       });
-      this._storePumpSnapshot(userId, message, reports, actionable);
+      this._storePumpSnapshot(userId, message, reports, actionable, mode);
       return message;
     }
 
     const message = await this._sendPlain(userId, PumpHunterFormatter.formatTop(reports, actionable), {
       reply_markup: keyboard,
     });
-    this._storePumpSnapshot(userId, message, reports, actionable);
+    this._storePumpSnapshot(userId, message, reports, actionable, mode);
     return message;
   }
 
@@ -885,14 +887,16 @@ ${insights}
 
     const reports = CandidateEngine.scanAll(this.provider);
     const actionable = CandidateEngine.getActionableCandidates(reports, 3);
-    const keyboard = this._getCandidateKeyboard(actionable.length);
+    const keyboard = this._getCandidateKeyboard(actionable.length, {
+      includeDetails: mode !== 'full',
+    });
 
     if (mode === 'full') {
       await this._sendPlainChunks(userId, CandidateFormatter.formatFull(reports));
       const message = await this._sendPlain(userId, '👇 Действия с текущими candidates:', {
         reply_markup: keyboard,
       });
-      this._storeCandidateSnapshot(userId, message, reports, actionable);
+      this._storeCandidateSnapshot(userId, message, reports, actionable, mode);
       return message;
     }
 
@@ -905,7 +909,7 @@ ${insights}
         const message = await this._sendPlain(userId, CandidateFormatter.formatTop(reports, actionable), {
           reply_markup: keyboard,
         });
-        this._storeCandidateSnapshot(userId, message, reports, actionable);
+        this._storeCandidateSnapshot(userId, message, reports, actionable, mode);
         return message;
       }
 
@@ -915,14 +919,14 @@ ${insights}
       const message = await this._sendPlain(userId, CandidateFormatter.formatTop(reports, actionable), {
         reply_markup: keyboard,
       });
-      this._storeCandidateSnapshot(userId, message, reports, actionable);
+      this._storeCandidateSnapshot(userId, message, reports, actionable, mode);
       return message;
     }
 
     const message = await this._sendPlain(userId, CandidateFormatter.formatTop(reports, actionable), {
       reply_markup: keyboard,
     });
-    this._storeCandidateSnapshot(userId, message, reports, actionable);
+    this._storeCandidateSnapshot(userId, message, reports, actionable, mode);
     return message;
   }
 
@@ -1113,54 +1117,80 @@ ${insights}`
     return `${periodTitle} | ${projectTitle} | ${scopeTitle}`;
   }
 
-  _getCandidateKeyboard(actionableCount = 0) {
-    const paperButton = actionableCount > 0
-      ? {
-          text: `🧪 Записать входы (${actionableCount})`,
-          callback_data: 'candidates_paper',
-        }
-      : {
-          text: '🧪 Нет входов для записи',
-          callback_data: 'candidates_paper',
-        };
+  _getCandidateKeyboard(actionableCount = 0, options = {}) {
+    const rows = [];
+    const includeDetails = options.includeDetails !== false;
+
+    if (actionableCount > 0) {
+      rows.push([{
+        text: `🧪 Записать в paper (${actionableCount})`,
+        callback_data: 'candidates_paper',
+      }]);
+    }
+
+    const navigationRow = [];
+    if (includeDetails) {
+      navigationRow.push({ text: '📋 Подробнее', callback_data: 'candidates_full' });
+    }
+    navigationRow.push({ text: '🔄 Новый скан', callback_data: 'candidates_refresh' });
+
+    rows.push(
+      navigationRow,
+      [
+        { text: '📊 Candidate V1 · 7д', callback_data: 'candidates_stats' },
+      ]
+    );
 
     return {
-      inline_keyboard: [
-        [paperButton],
-        [
-          { text: '🔄 Обновить', callback_data: 'candidates_refresh' },
-          { text: '📋 Детали', callback_data: 'candidates_full' },
-        ],
-        [
-          { text: '📊 Candidate stats 7д', callback_data: 'candidates_stats' },
-        ],
-      ],
+      inline_keyboard: rows,
     };
   }
 
-  _getPumpHunterKeyboard(actionableCount = 0) {
-    const paperButton = actionableCount > 0
-      ? {
-          text: `🧪 Записать pump-входы (${actionableCount})`,
-          callback_data: 'pump_paper',
-        }
-      : {
-          text: '🧪 Нет pump-входов для записи',
-          callback_data: 'pump_paper',
-        };
+  _getPumpHunterKeyboard(actionableCount = 0, options = {}) {
+    const rows = [];
+    const includeDetails = options.includeDetails !== false;
+
+    if (actionableCount > 0) {
+      rows.push([{
+        text: `🧪 Записать в paper (${actionableCount})`,
+        callback_data: 'pump_paper',
+      }]);
+    }
+
+    const navigationRow = [];
+    if (includeDetails) {
+      navigationRow.push({ text: '📋 Подробнее', callback_data: 'pump_full' });
+    }
+    navigationRow.push({ text: '🔄 Новый скан', callback_data: 'pump_refresh' });
+
+    rows.push(
+      navigationRow,
+      [
+        { text: '📊 Pump V1 · 7д', callback_data: 'pump_stats' },
+      ]
+    );
 
     return {
-      inline_keyboard: [
-        [paperButton],
-        [
-          { text: '🔄 Обновить', callback_data: 'pump_refresh' },
-          { text: '📋 Детали', callback_data: 'pump_full' },
-        ],
-        [
-          { text: '📊 Pump stats 7д', callback_data: 'pump_stats' },
-        ],
-      ],
+      inline_keyboard: rows,
     };
+  }
+
+  async _sendCandidateSnapshotDetails(userId, messageId) {
+    const snapshot = this._getCandidateSnapshot(userId, messageId);
+    if (!snapshot) {
+      return this._sendPlain(userId, '⏰ Этот отчёт устарел. Нажми «Новый скан», чтобы получить актуальные данные.');
+    }
+
+    return this._sendPlainChunks(userId, CandidateFormatter.formatFull(snapshot.reports));
+  }
+
+  async _sendPumpSnapshotDetails(userId, messageId) {
+    const snapshot = this._getPumpSnapshot(userId, messageId);
+    if (!snapshot) {
+      return this._sendPlain(userId, '⏰ Этот отчёт устарел. Нажми «Новый скан», чтобы получить актуальные данные.');
+    }
+
+    return this._sendPlainChunks(userId, PumpHunterFormatter.formatFull(snapshot.reports));
   }
 
   async _writeCandidateSnapshotToPaper(userId, messageId) {
@@ -1186,6 +1216,9 @@ ${insights}`
 
     const tracked = await this._trackCandidateActionables(userId, snapshot.actionable);
     snapshot.trackedAt = Date.now();
+    await this._replaceReportKeyboard(userId, messageId, this._getCandidateKeyboard(0, {
+      includeDetails: snapshot.mode !== 'full',
+    }));
     return this._sendPlain(userId, CandidateFormatter.formatPaperResult(tracked));
   }
 
@@ -1205,7 +1238,23 @@ ${insights}`
 
     const tracked = await this._trackPumpHunterActionables(userId, snapshot.actionable);
     snapshot.trackedAt = Date.now();
+    await this._replaceReportKeyboard(userId, messageId, this._getPumpHunterKeyboard(0, {
+      includeDetails: snapshot.mode !== 'full',
+    }));
     return this._sendPlain(userId, PumpHunterFormatter.formatPaperResult(tracked));
+  }
+
+  async _replaceReportKeyboard(userId, messageId, keyboard) {
+    if (!this.bot?.editMessageReplyMarkup) return;
+
+    try {
+      await this.bot.editMessageReplyMarkup(keyboard, {
+        chat_id: userId,
+        message_id: messageId,
+      });
+    } catch (error) {
+      console.error('❌ Telegram report keyboard update failed:', error?.message || error);
+    }
   }
 
   async _trackCandidateActionables(userId, actionable = []) {
@@ -1232,13 +1281,14 @@ ${insights}`
     return tracked;
   }
 
-  _storeCandidateSnapshot(userId, message, reports, actionable) {
+  _storeCandidateSnapshot(userId, message, reports, actionable, mode = 'top') {
     if (!message?.message_id) return;
 
     const key = this._candidateSnapshotKey(userId, message.message_id);
     this.candidateSnapshots.set(key, {
       reports,
       actionable,
+      mode,
       createdAt: Date.now(),
     });
     this._cleanupCandidateSnapshots();
@@ -1258,13 +1308,14 @@ ${insights}`
     return snapshot;
   }
 
-  _storePumpSnapshot(userId, message, reports, actionable) {
+  _storePumpSnapshot(userId, message, reports, actionable, mode = 'top') {
     if (!message?.message_id) return;
 
     const key = this._pumpSnapshotKey(userId, message.message_id);
     this.pumpSnapshots.set(key, {
       reports,
       actionable,
+      mode,
       createdAt: Date.now(),
     });
     this._cleanupPumpSnapshots();
@@ -1560,7 +1611,7 @@ Live-сделки на Bybit отключены. Бот собирает и пр
     }
 
     if (data === 'candidates_full') {
-      return this._sendCandidates(userId, 'full');
+      return this._sendCandidateSnapshotDetails(userId, query.message.message_id);
     }
 
     if (data === 'candidates_paper') {
@@ -1580,7 +1631,7 @@ Live-сделки на Bybit отключены. Бот собирает и пр
     }
 
     if (data === 'pump_full') {
-      return this._sendPumpHunter(userId, 'full');
+      return this._sendPumpSnapshotDetails(userId, query.message.message_id);
     }
 
     if (data === 'pump_paper') {
