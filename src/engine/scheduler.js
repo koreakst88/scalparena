@@ -435,18 +435,27 @@ class Scheduler {
   async _recordPumpV2Shadow(users = [], reports = []) {
     if (!PUMP_V2_SHADOW_ENABLED || !PAPER_SIGNAL_TRACKING_ENABLED) return;
 
-    const candidates = PumpStateMachineV2.getEntryReady(
-      reports,
-      PUMP_V2_SHADOW_MAX_PER_CYCLE
+    const entryReady = PumpStateMachineV2.getEntryReady(reports, reports.length);
+    const contextBlocked = entryReady.filter(
+      (candidate) => candidate.marketContext?.decision === 'BLOCK'
     );
+    const candidates = entryReady
+      .filter((candidate) => candidate.marketContext?.decision !== 'BLOCK')
+      .slice(0, PUMP_V2_SHADOW_MAX_PER_CYCLE);
     const stateSummary = this._formatPumpV2Diagnostics(reports);
 
     if (!candidates.length) {
-      console.log(`🧬 Pump State V2 shadow: no ENTRY_READY | ${stateSummary}`);
+      console.log(
+        `🧬 Pump State V2 shadow: no eligible ENTRY_READY | ` +
+        `contextBlocked=${contextBlocked.length} | ${stateSummary}`
+      );
       return;
     }
 
-    console.log(`🧬 Pump State V2 shadow: ${candidates.length} ENTRY_READY | ${stateSummary}`);
+    console.log(
+      `🧬 Pump State V2 shadow: ${candidates.length} eligible ENTRY_READY | ` +
+      `contextBlocked=${contextBlocked.length} | ${stateSummary}`
+    );
 
     for (const user of users) {
       const userId = String(user.telegram_id);

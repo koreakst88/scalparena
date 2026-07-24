@@ -30,8 +30,8 @@ const reports = ['AUSDT', 'BUSDT', 'CUSDT'].map((pair, index) => ({
     summary: 'test state sequence',
     marketContext: {
       version: 'market_context_v1',
-      state: 'RISK_ON',
-      decision: 'ALLOW',
+      state: index === 0 ? 'RISK_OFF' : index === 1 ? 'RISK_ON' : 'NEUTRAL',
+      decision: index === 0 ? 'BLOCK' : index === 1 ? 'ALLOW' : 'CAUTION',
     },
   },
 }));
@@ -61,6 +61,10 @@ scheduler._recordPumpV2Shadow([{ telegram_id: '42' }], reports)
     const checks = [
       { name: 'Shadow cycle respects max two records', pass: tracked.length === 2 },
       {
+        name: 'BTC BLOCK is removed before the cycle limit is applied',
+        pass: tracked.map((item) => item.signal.pair).join(',') === 'BUSDT,CUSDT',
+      },
+      {
         name: 'Records use the isolated Pump V2 source',
         pass: tracked.every((item) => item.source === 'PUMP_V2_SHADOW'),
       },
@@ -78,7 +82,9 @@ scheduler._recordPumpV2Shadow([{ telegram_id: '42' }], reports)
       },
       {
         name: 'Market context research tag reaches paper metadata',
-        pass: tracked.every((item) => item.signal.signalMetadata?.marketContext?.decision === 'ALLOW'),
+        pass: tracked.map(
+          (item) => item.signal.signalMetadata?.marketContext?.decision
+        ).join(',') === 'ALLOW,CAUTION',
       },
     ];
 
