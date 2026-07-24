@@ -40,10 +40,15 @@ class PaperSignalStats {
       ));
     }
 
-    if (['pump_v2', 'pump_shadow', 'pump_state'].includes(normalized)) {
+    if ([
+      'pump_v2',
+      'pump_v2_baseline',
+      'pump_shadow',
+      'pump_state',
+    ].includes(normalized)) {
       return signals.filter((signal) => (
         signal.project === 'PUMP_V2_SHADOW' ||
-        signal.strategy === 'PUMP_STATE_V2_SHADOW' ||
+        ['PUMP_STATE_V2_SHADOW', 'PUMP_STATE_V2_1_SHADOW'].includes(signal.strategy) ||
         signal.source === 'PUMP_V2_SHADOW'
       ));
     }
@@ -75,7 +80,7 @@ class PaperSignalStats {
       signal.strategy !== 'BREAKOUT_V2_SHADOW' &&
       signal.source !== 'CANDIDATE_V2_SHADOW' &&
       signal.project !== 'PUMP_V2_SHADOW' &&
-      signal.strategy !== 'PUMP_STATE_V2_SHADOW' &&
+      !['PUMP_STATE_V2_SHADOW', 'PUMP_STATE_V2_1_SHADOW'].includes(signal.strategy) &&
       signal.source !== 'PUMP_V2_SHADOW'
     ));
   }

@@ -55,14 +55,14 @@ bot._sendResearchReadiness('42')
         pass: sentMessage.includes('Candidate V3: 1/30 resolved'),
       },
       {
-        name: 'Legacy and V1 rows do not pollute Pump V2 readiness',
-        pass: sentMessage.includes('Pump V2: 0/30 resolved') &&
+        name: 'Legacy and V1 rows do not pollute Pump V2.1 readiness',
+        pass: sentMessage.includes('Pump V2.1: 0/30 resolved') &&
           sentMessage.includes('BLOCK 0/10'),
       },
       {
         name: 'Report identifies the active experiment',
         pass: sentMessage.includes('CANDIDATE_V3_20260720') &&
-          sentMessage.includes('SCALPARENA_V2_20260719'),
+          sentMessage.includes('PUMP_V2_ATR13_20260725'),
       },
     ];
 

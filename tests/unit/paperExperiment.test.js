@@ -1,6 +1,7 @@
 const {
   CURRENT_PAPER_EXPERIMENT_ID,
   CANDIDATE_V3_EXPERIMENT_ID,
+  PUMP_V2_EXPERIMENT_ID,
   getPaperProject,
   getPaperStrategyVersion,
 } = require('../../src/config/paperExperiment');
@@ -8,6 +9,14 @@ const {
 console.log('Paper Experiment Config Test\n');
 
 const checks = [
+  {
+    name: 'Pump V2.1 starts a clean ATR 1.3 cohort',
+    pass: PUMP_V2_EXPERIMENT_ID === 'PUMP_V2_ATR13_20260725' &&
+      getPaperProject({ strategy: 'PUMP_STATE_V2_1_SHADOW' }, 'PUMP_V2_SHADOW') ===
+        'PUMP_V2_SHADOW' &&
+      getPaperStrategyVersion({ strategy: 'PUMP_STATE_V2_1_SHADOW' }) ===
+        'pump_state_machine_v2_1_atr13',
+  },
   {
     name: 'Candidate V3 starts a clean project-specific cohort',
     pass: CANDIDATE_V3_EXPERIMENT_ID === 'CANDIDATE_V3_20260720' &&

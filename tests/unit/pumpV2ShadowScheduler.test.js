@@ -12,7 +12,7 @@ const reports = ['AUSDT', 'BUSDT', 'CUSDT'].map((pair, index) => ({
     pair,
     action: 'SHADOW_TRADE',
     state: 'ENTRY_READY',
-    strategy: 'PUMP_STATE_V2_SHADOW',
+    strategy: 'PUMP_STATE_V2_1_SHADOW',
     entryMode: 'IGNITION_BREAKOUT_RETEST_RECLAIM',
     direction: 'LONG',
     score: 90 - index,
@@ -67,9 +67,15 @@ scheduler._recordPumpV2Shadow([{ telegram_id: '42' }], reports)
       {
         name: 'Active lookup is isolated by Pump V2 project and experiment',
         pass: activeFilter?.project === 'PUMP_V2_SHADOW' &&
-          activeFilter?.experimentId === 'SCALPARENA_V2_20260719',
+          activeFilter?.experimentId === 'PUMP_V2_ATR13_20260725',
       },
       { name: 'Shadow recording sends no Telegram messages', pass: telegramMessages === 0 },
+      {
+        name: 'New rows start a clean ATR 1.3 experiment',
+        pass: tracked.every((item) => (
+          item.signal.experimentId === 'PUMP_V2_ATR13_20260725'
+        )),
+      },
       {
         name: 'Market context research tag reaches paper metadata',
         pass: tracked.every((item) => item.signal.signalMetadata?.marketContext?.decision === 'ALLOW'),

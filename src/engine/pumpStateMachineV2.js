@@ -7,7 +7,7 @@ const MIN_TURNOVER_24H = 5000000;
 const MIN_IGNITION_MOVE_PERCENT = 1.5;
 const MIN_IGNITION_VOLUME_RATIO = 2;
 const MAX_FRESH_FROM_LOW = 35;
-const MAX_ENTRY_DISTANCE_ATR = 2;
+const MAX_ENTRY_DISTANCE_ATR = 1.3;
 const TARGET_RISK_REWARD = 1.8;
 const MIN_SCORE = 75;
 
@@ -211,7 +211,7 @@ class PumpStateMachineV2 {
       state: 'ENTRY_READY',
       reason: 'RETEST_RECLAIM_CONFIRMED',
       direction: 'LONG',
-      strategy: 'PUMP_STATE_V2_SHADOW',
+      strategy: 'PUMP_STATE_V2_1_SHADOW',
       entryMode: 'IGNITION_BREAKOUT_RETEST_RECLAIM',
       score,
       entryPrice: this._round(entryPrice, 8),
@@ -255,14 +255,14 @@ class PumpStateMachineV2 {
       volume: candidate.ignitionVolumeRatio * 100,
       atrPercent: candidate.atrPercent,
       confidence: candidate.score,
-      strategy: 'PUMP_STATE_V2_SHADOW',
+      strategy: 'PUMP_STATE_V2_1_SHADOW',
       entryMode: candidate.entryMode,
       marketRegime: 'PUMP_RETEST_CONTINUATION',
       setupReason: candidate.summary,
       invalidationRule: `Retest invalidation ниже $${candidate.stopLoss}`,
       marketSource: candidate.marketSource,
       timeframe: candidate.timeframe,
-      exitProfile: 'state_v2_rr_1_8',
+      exitProfile: 'state_v2_1_atr13_rr_1_8',
       signalMetadata: {
         marketContext: candidate.marketContext || null,
         state: candidate.state,
@@ -324,7 +324,7 @@ class PumpStateMachineV2 {
     return {
       pair,
       action: 'NO_TRADE',
-      strategy: 'PUMP_STATE_V2_SHADOW',
+      strategy: 'PUMP_STATE_V2_1_SHADOW',
       state,
       reason,
       diagnostic,

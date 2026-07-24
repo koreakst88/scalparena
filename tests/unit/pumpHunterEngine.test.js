@@ -112,7 +112,7 @@ const okxFallbackReportsPromise = PumpHunterEngine.scan({
     { name: 'Empty scan shows data unavailable', pass: emptyMessage.includes('Данные Bybit не получены') && !emptyMessage.includes('Проверено: 0') },
     { name: 'Binance fallback is used when Bybit tickers are unavailable', pass: fallbackReports[0]?.marketSource === 'BINANCE_FUTURES_FALLBACK' },
     { name: 'OKX fallback is used when Bybit and Binance are unavailable', pass: okxFallbackReports[0]?.marketSource === 'OKX_SWAP_FALLBACK' },
-    { name: 'Legacy scan attaches V2 state without changing V1 action', pass: fallbackReports[0]?.shadowV2?.strategy === 'PUMP_STATE_V2_SHADOW' },
+    { name: 'Legacy scan attaches V2.1 state without changing V1 action', pass: fallbackReports[0]?.shadowV2?.strategy === 'PUMP_STATE_V2_1_SHADOW' },
     {
       name: 'Pump V2 report carries BTC context without changing V1 action',
       pass: fallbackReports[0]?.shadowV2?.marketContext?.state === 'RISK_ON' &&

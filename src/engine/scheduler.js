@@ -35,6 +35,7 @@ const {
 const {
   CURRENT_PAPER_EXPERIMENT_ID,
   CANDIDATE_V3_EXPERIMENT_ID,
+  PUMP_V2_EXPERIMENT_ID,
   PAPER_PROJECTS,
 } = require('../config/paperExperiment');
 const { MARKET_CONTEXT_V1_ENABLED } = require('../config/marketContext');
@@ -451,7 +452,7 @@ class Scheduler {
       const userId = String(user.telegram_id);
       const activeSignals = await this.db.getActivePaperSignals(userId, {
         project: PAPER_PROJECTS.PUMP_V2_SHADOW,
-        experimentId: CURRENT_PAPER_EXPERIMENT_ID,
+        experimentId: PUMP_V2_EXPERIMENT_ID,
       });
       const activePairs = new Set(activeSignals.map((signal) => this._normalizePair(signal.pair)));
       let savedCount = 0;
@@ -461,7 +462,10 @@ class Scheduler {
 
         const saved = await this.bot._trackPaperSignal(
           userId,
-          PumpStateMachineV2.toPaperSignal(candidate),
+          {
+            ...PumpStateMachineV2.toPaperSignal(candidate),
+            experimentId: PUMP_V2_EXPERIMENT_ID,
+          },
           'PUMP_V2_SHADOW'
         );
         if (saved) {

@@ -2,6 +2,8 @@ const CURRENT_PAPER_EXPERIMENT_ID = process.env.PAPER_SIGNAL_EXPERIMENT_ID ||
   'SCALPARENA_V2_20260719';
 const CANDIDATE_V3_EXPERIMENT_ID = process.env.CANDIDATE_V3_EXPERIMENT_ID ||
   'CANDIDATE_V3_20260720';
+const PUMP_V2_EXPERIMENT_ID = process.env.PUMP_V2_EXPERIMENT_ID ||
+  'PUMP_V2_ATR13_20260725';
 const LEGACY_PAPER_EXPERIMENT_ID = 'LEGACY_PRE_20260719';
 
 const PAPER_PROJECTS = {
@@ -21,6 +23,7 @@ const PAPER_STRATEGY_VERSIONS = {
   MEAN_REVERSION: 'candidate_mean_reversion_v1_restricted',
   PUMP_HUNTER: 'pump_continuation_v2_dynamic_exits',
   PUMP_STATE_V2_SHADOW: 'pump_state_machine_v2_shadow',
+  PUMP_STATE_V2_1_SHADOW: 'pump_state_machine_v2_1_atr13',
 };
 
 function getPaperProject(signal = {}, source = '') {
@@ -32,7 +35,10 @@ function getPaperProject(signal = {}, source = '') {
     return PAPER_PROJECTS.CANDIDATE_V2_SHADOW;
   }
 
-  if (signal.strategy === 'PUMP_STATE_V2_SHADOW' || source === 'PUMP_V2_SHADOW') {
+  if (
+    ['PUMP_STATE_V2_SHADOW', 'PUMP_STATE_V2_1_SHADOW'].includes(signal.strategy) ||
+    source === 'PUMP_V2_SHADOW'
+  ) {
     return PAPER_PROJECTS.PUMP_V2_SHADOW;
   }
 
@@ -54,6 +60,7 @@ function getPaperStrategyVersion(signal = {}) {
 module.exports = {
   CURRENT_PAPER_EXPERIMENT_ID,
   CANDIDATE_V3_EXPERIMENT_ID,
+  PUMP_V2_EXPERIMENT_ID,
   LEGACY_PAPER_EXPERIMENT_ID,
   PAPER_PROJECTS,
   PAPER_STRATEGY_VERSIONS,

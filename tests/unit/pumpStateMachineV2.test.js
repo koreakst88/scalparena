@@ -33,7 +33,7 @@ function buildSequence(stage = 'entry') {
   candles.push({
     timestamp: start + 61 * 15 * 60000,
     open: level + 0.028,
-    high: level + 0.032,
+    high: level + 0.012,
     low: level + 0.001,
     close: level + 0.008,
     volume: 1400,
@@ -44,9 +44,9 @@ function buildSequence(stage = 'entry') {
   candles.push({
     timestamp: start + 62 * 15 * 60000,
     open: level + 0.01,
-    high: level + 0.036,
+    high: level + 0.023,
     low: level + 0.006,
-    close: level + 0.033,
+    close: level + 0.018,
     volume: 1900,
     confirm: true,
   });
@@ -72,6 +72,16 @@ const strongReclaim = PumpStateMachineV2.analyzeSymbol(
   'RECLAIMUSDT',
   ticker,
   strongReclaimCandles,
+  options
+);
+const lateEntryCandles = buildSequence('entry');
+const lateReclaim = lateEntryCandles[lateEntryCandles.length - 1];
+lateReclaim.high += 0.025;
+lateReclaim.close += 0.025;
+const lateEntry = PumpStateMachineV2.analyzeSymbol(
+  'LATEUSDT',
+  ticker,
+  lateEntryCandles,
   options
 );
 const unconfirmed = PumpStateMachineV2.analyzeSymbol(
@@ -101,7 +111,7 @@ const checks = [
   },
   {
     name: 'Paper signal preserves state transitions and market source',
-    pass: paperSignal?.strategy === 'PUMP_STATE_V2_SHADOW' &&
+    pass: paperSignal?.strategy === 'PUMP_STATE_V2_1_SHADOW' &&
       paperSignal?.signalMetadata?.state === 'ENTRY_READY' &&
       paperSignal?.marketSource === 'OKX_SWAP_FALLBACK',
   },
@@ -112,6 +122,12 @@ const checks = [
   {
     name: 'A strong reclaim is not mistaken for a brand-new ignition',
     pass: strongReclaim.state === 'ENTRY_READY',
+  },
+  {
+    name: 'Entry farther than 1.3 ATR is rejected as a late chase',
+    pass: lateEntry.state === 'REJECTED' &&
+      lateEntry.reason === 'ENTRY_TOO_FAR_FROM_LEVEL' &&
+      lateEntry.entryDistanceAtr > 1.3,
   },
   {
     name: 'Open candles cannot advance the state machine',

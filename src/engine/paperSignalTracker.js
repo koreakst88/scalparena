@@ -241,7 +241,7 @@ class PaperSignalTracker {
 
   _isPumpHunterSignal(signal) {
     return (
-      ['PUMP_HUNTER', 'PUMP_STATE_V2_SHADOW'].includes(signal.strategy) ||
+      ['PUMP_HUNTER', 'PUMP_STATE_V2_SHADOW', 'PUMP_STATE_V2_1_SHADOW'].includes(signal.strategy) ||
       ['PUMP_HUNTER', 'PUMP_AUTO', 'PUMP_V2_SHADOW'].includes(signal.source) ||
       ['PUMP', 'PUMP_V2_SHADOW'].includes(signal.project)
     );
@@ -256,7 +256,7 @@ class PaperSignalTracker {
       signal.strategy === 'BREAKOUT_V3_SHADOW' ||
       signal.source === 'CANDIDATE_V3' ||
       signal.project === 'PUMP_V2_SHADOW' ||
-      signal.strategy === 'PUMP_STATE_V2_SHADOW' ||
+      ['PUMP_STATE_V2_SHADOW', 'PUMP_STATE_V2_1_SHADOW'].includes(signal.strategy) ||
       signal.source === 'PUMP_V2_SHADOW'
     );
   }
