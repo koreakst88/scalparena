@@ -56,6 +56,7 @@ class Scheduler {
     this.lastPumpScanTime = null;
     this.candidateAlertCooldowns = new Map();
     this.pumpAlertCooldowns = new Map();
+    this.candidateDiagnosticsUnavailable = false;
   }
 
   start() {
@@ -254,11 +255,19 @@ class Scheduler {
     const candidates = contextualCandidates.filter((candidate) => (
       CandidateBreakoutV3.isAllowedByMarketContext(candidate)
     ));
+    await this._recordCandidateV3Diagnostics({
+      reports,
+      rawCandidates,
+      contextualCandidates,
+      candidates,
+      marketContext,
+    });
 
     if (!candidates.length) {
       console.log(
         `🔬 Candidate V3: no qualified retest entries | ${this._formatShadowDiagnostics(reports)} | ` +
-        `market=${marketContext?.state || 'OFF'} | contextRejected=${contextualCandidates.length}`
+        `market=${marketContext?.state || 'OFF'} | ` +
+        `contextRejected=${contextualCandidates.length - candidates.length}`
       );
       return;
     }
@@ -301,6 +310,80 @@ class Scheduler {
       }
 
       console.log(`🔬 Candidate V3: saved ${savedCount} signal(s) for ${userId}; alerts=OFF`);
+    }
+  }
+
+  async _recordCandidateV3Diagnostics({
+    reports = [],
+    rawCandidates = [],
+    contextualCandidates = [],
+    candidates = [],
+    marketContext = null,
+  } = {}) {
+    if (this.candidateDiagnosticsUnavailable) return;
+    if (typeof this.db.createResearchScanDiagnostic !== 'function') return;
+
+    const rejectionCounts = reports.reduce((result, report) => {
+      const reasons = report.diagnostic?.rejectionReasons?.length
+        ? report.diagnostic.rejectionReasons
+        : [report.reason || 'UNKNOWN'];
+      reasons.forEach((reason) => {
+        result[reason] = (result[reason] || 0) + 1;
+      });
+      return result;
+    }, {});
+    const contextRejectionCounts = contextualCandidates.reduce((result, candidate) => {
+      if (CandidateBreakoutV3.isAllowedByMarketContext(candidate)) return result;
+      const decision = candidate.marketContext?.decision || 'UNMARKED';
+      result[decision] = (result[decision] || 0) + 1;
+      return result;
+    }, {});
+    const examples = reports
+      .map((report) => ({
+        pair: report.pair,
+        action: report.action,
+        reason: report.reason,
+        direction: report.diagnostic?.direction || null,
+        score: report.diagnostic?.score || null,
+        volumeRatio: report.diagnostic?.volumeRatio ?? null,
+        bodyRatio: report.diagnostic?.bodyRatio ?? null,
+        retestVolumeRatio: report.diagnostic?.retestVolumeRatio ?? null,
+        entryDistanceAtr: report.diagnostic?.entryDistanceAtr ?? null,
+        trend5m: report.diagnostic?.trend5m || null,
+      }))
+      .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+      .slice(0, 5);
+
+    try {
+      await this.db.createResearchScanDiagnostic({
+        experiment_id: CANDIDATE_V3_EXPERIMENT_ID,
+        project: PAPER_PROJECTS.CANDIDATE_V3,
+        strategy: 'BREAKOUT_V3_SHADOW',
+        scan_source: 'BYBIT_WEBSOCKET',
+        scanned_pairs: reports.length,
+        qualified_before_context: rawCandidates.length,
+        qualified_after_context: candidates.length,
+        rejection_counts: rejectionCounts,
+        context_rejection_counts: contextRejectionCounts,
+        market_context: marketContext,
+        examples,
+      });
+    } catch (error) {
+      const message = String(error?.message || '');
+      const missingTable = (
+        error?.code === '42P01' ||
+        error?.code === 'PGRST205' ||
+        message.includes('research_scan_diagnostics')
+      );
+      if (missingTable) {
+        this.candidateDiagnosticsUnavailable = true;
+        console.warn(
+          '⚠️ Candidate V3 diagnostics table is unavailable; apply migration ' +
+          '20260725000000_add_research_scan_diagnostics.sql'
+        );
+        return;
+      }
+      console.error('❌ Candidate V3 diagnostics write failed:', message);
     }
   }
 

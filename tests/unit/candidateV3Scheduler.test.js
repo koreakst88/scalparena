@@ -34,6 +34,7 @@ CandidateBreakoutV3.scanAll = () => candidates.map((candidate) => ({
 
 const tracked = [];
 let activeFilter = null;
+let diagnosticPayload = null;
 const bot = {
   _trackPaperSignal: async (userId, signal, source) => {
     tracked.push({ userId, signal, source });
@@ -46,6 +47,10 @@ const db = {
     return [];
   },
   getPaperSignalsSince: async () => [],
+  createResearchScanDiagnostic: async (payload) => {
+    diagnosticPayload = payload;
+    return { id: 'diagnostic-1', ...payload };
+  },
 };
 const provider = {
   getPairs: () => [],
@@ -80,6 +85,14 @@ scheduler._recordCandidateV3([{ telegram_id: '42' }])
         name: 'Active lookup cannot mix V2 and V3 cohorts',
         pass: activeFilter?.project === 'CANDIDATE_V3' &&
           activeFilter?.experimentId === 'CANDIDATE_V3_20260720',
+      },
+      {
+        name: 'Each market cycle writes one V3 diagnostic snapshot',
+        pass: diagnosticPayload?.project === 'CANDIDATE_V3' &&
+          diagnosticPayload?.experiment_id === 'CANDIDATE_V3_20260720' &&
+          diagnosticPayload?.scanned_pairs === 2 &&
+          diagnosticPayload?.qualified_before_context === 1 &&
+          diagnosticPayload?.qualified_after_context === 1,
       },
       {
         name: 'A recent V3 signal starts a six-hour pair cooldown',

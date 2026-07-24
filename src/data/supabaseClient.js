@@ -225,6 +225,17 @@ class SupabaseClient {
     return data;
   }
 
+  async createResearchScanDiagnostic(diagnosticData) {
+    const { data, error } = await this.client
+      .from('research_scan_diagnostics')
+      .insert([diagnosticData])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  }
+
   _isMissingPaperExperimentColumnError(error) {
     const message = String(error?.message || '').toLowerCase();
     return PAPER_EXPERIMENT_FIELDS.some((field) => message.includes(field.toLowerCase())) && (
