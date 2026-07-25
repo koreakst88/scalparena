@@ -1,0 +1,78 @@
+const ExtremeDataAudit = require('../../src/engine/extremeDataAudit');
+const ExtremeAuditFormatter = require('../../src/analytics/extremeAuditFormatter');
+
+function probe(capability, available, source, records = 1, error = null) {
+  return {
+    capability,
+    available,
+    source,
+    records,
+    latencyMs: 25,
+    error,
+  };
+}
+
+const provider = {
+  auditBybitExtremeData: async () => ({
+    ticker: probe('ticker', true, 'BYBIT_PROXY'),
+    candles: probe('candles', true, 'BYBIT_PROXY', 3),
+    funding: probe('funding', false, null, 0, '403'),
+    openInterest: probe('openInterest', false, null, 0, '403'),
+    orderbook: probe('orderbook', true, 'BYBIT_PROXY', 50),
+    liquidations: probe('liquidations', true, 'BYBIT_WS', 0),
+  }),
+  auditOkxExtremeData: async () => ({
+    ticker: probe('ticker', true, 'OKX'),
+    candles: probe('candles', true, 'OKX', 3),
+    funding: probe('funding', true, 'OKX', 3),
+    openInterest: probe('openInterest', true, 'OKX'),
+    orderbook: probe('orderbook', true, 'OKX', 50),
+    liquidations: probe('liquidations', true, 'OKX', 0),
+  }),
+};
+
+Promise.resolve()
+  .then(() => ExtremeDataAudit.run(provider, 'dexe/usdt'))
+  .then((report) => {
+    const formatted = ExtremeAuditFormatter.format(report);
+    const checks = [
+      {
+        name: 'Pair is normalized',
+        pass: report.pair === 'DEXEUSDT',
+      },
+      {
+        name: 'Bybit remains primary where available',
+        pass: report.effective.ticker.source === 'BYBIT_PROXY' &&
+          report.effective.orderbook.source === 'BYBIT_PROXY',
+      },
+      {
+        name: 'OKX fills missing derivatives capabilities',
+        pass: report.effective.funding.source === 'OKX' &&
+          report.effective.openInterest.source === 'OKX',
+      },
+      {
+        name: 'Empty liquidation event list does not mean unavailable feed',
+        pass: report.effective.liquidations.available &&
+          report.effective.liquidations.records === 0,
+      },
+      {
+        name: 'Research readiness does not enable signals',
+        pass: report.readyForResearch && report.signalsEnabled === false,
+      },
+      {
+        name: 'Telegram report explicitly keeps all trading actions off',
+        pass: formatted.includes('Сигналы: OFF') &&
+          formatted.includes('Автосканирование: OFF') &&
+          formatted.includes('Paper-записи: OFF'),
+      },
+    ];
+
+    checks.forEach((check) => console.log(`   ${check.pass ? 'PASS' : 'FAIL'} ${check.name}`));
+    const allPassed = checks.every((check) => check.pass);
+    console.log(`\n${allPassed ? 'ALL PASSED' : 'SOME FAILED'}\n`);
+    process.exit(allPassed ? 0 : 1);
+  })
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });

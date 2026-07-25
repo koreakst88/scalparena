@@ -13,7 +13,7 @@ const commands = ScalpArenaBot.BOT_COMMANDS.map((item) => item.command);
 const checks = [
   {
     name: 'Visible Telegram menu contains only primary commands',
-    pass: commands.join(',') === 'menu,candidates,pump,signals,research,status,help',
+    pass: commands.join(',') === 'menu,candidates,pump,extreme,signals,research,status,help',
   },
   {
     name: 'Legacy commands stay out of the visible Telegram menu',

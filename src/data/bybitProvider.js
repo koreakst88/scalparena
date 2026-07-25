@@ -30,6 +30,7 @@ const COINGECKO_RETRY_DELAY_MS = 30000;
 const COINGECKO_MAX_RETRIES = 2;
 const BINANCE_FUTURES_BASE = 'https://fapi.binance.com';
 const OKX_PUBLIC_BASE = 'https://www.okx.com';
+const EXTREME_AUDIT_DEFAULT_TIMEOUT_MS = 6000;
 
 class BybitDataProvider {
   constructor() {
@@ -43,6 +44,13 @@ class BybitDataProvider {
       ? this.restBase
       : 'api.bybit.com';
     this.publicMarketRestBases = this._getPublicMarketRestBases();
+    this.extremeAuditUseTestnet = process.env.EXTREME_USE_TESTNET === 'true';
+    this.extremeAuditRestBases = this.extremeAuditUseTestnet
+      ? ['api-testnet.bybit.com']
+      : this._getExtremeAuditRestBases();
+    this.extremeAuditWsUrl = this.extremeAuditUseTestnet
+      ? 'wss://stream-testnet.bybit.com/v5/public/linear'
+      : 'wss://stream.bybit.com/v5/public/linear';
     this.lastPublicMarketHost = null;
     this.lastPublicMarketError = null;
     this.lastSupabaseProxyError = null;
@@ -529,6 +537,337 @@ class BybitDataProvider {
     }
   }
 
+  async auditBybitExtremeData(pair, options = {}) {
+    const timeoutMs = options.timeoutMs || EXTREME_AUDIT_DEFAULT_TIMEOUT_MS;
+    const probes = await Promise.all([
+      this._probeBybitRest('ticker', '/v5/market/tickers', {
+        category: 'linear',
+        symbol: pair,
+      }, timeoutMs),
+      this._probeBybitRest('candles', '/v5/market/kline', {
+        category: 'linear',
+        symbol: pair,
+        interval: '5',
+        limit: 3,
+      }, timeoutMs),
+      this._probeBybitRest('funding', '/v5/market/funding/history', {
+        category: 'linear',
+        symbol: pair,
+        limit: 3,
+      }, timeoutMs),
+      this._probeBybitRest('openInterest', '/v5/market/open-interest', {
+        category: 'linear',
+        symbol: pair,
+        intervalTime: '5min',
+        limit: 3,
+      }, timeoutMs),
+      this._probeBybitRest('orderbook', '/v5/market/orderbook', {
+        category: 'linear',
+        symbol: pair,
+        limit: 25,
+      }, timeoutMs),
+      this._probeBybitLiquidationStream(pair, timeoutMs),
+    ]);
+
+    return Object.fromEntries(probes.map((probe) => [probe.capability, probe]));
+  }
+
+  async auditOkxExtremeData(pair, options = {}) {
+    const timeoutMs = options.timeoutMs || EXTREME_AUDIT_DEFAULT_TIMEOUT_MS;
+    const instId = this._symbolToOkxInstId(pair);
+    const uly = `${String(pair).replace(/USDT$/, '')}-USDT`;
+    const probes = await Promise.all([
+      this._probeOkxRest('ticker', '/api/v5/market/ticker', { instId }, timeoutMs),
+      this._probeOkxRest('candles', '/api/v5/market/candles', {
+        instId,
+        bar: '5m',
+        limit: 3,
+      }, timeoutMs),
+      this._probeOkxRest('funding', '/api/v5/public/funding-rate-history', {
+        instId,
+        limit: 3,
+      }, timeoutMs),
+      this._probeOkxRest('openInterest', '/api/v5/public/open-interest', {
+        instType: 'SWAP',
+        instId,
+      }, timeoutMs),
+      this._probeOkxRest('orderbook', '/api/v5/market/books', {
+        instId,
+        sz: 25,
+      }, timeoutMs),
+      this._probeOkxRest('liquidations', '/api/v5/public/liquidation-orders', {
+        instType: 'SWAP',
+        uly,
+        state: 'filled',
+        limit: 20,
+      }, timeoutMs, { emptyIsAvailable: true }),
+    ]);
+
+    return Object.fromEntries(probes.map((probe) => [probe.capability, probe]));
+  }
+
+  async _probeBybitRest(capability, path, params, timeoutMs) {
+    const startedAt = Date.now();
+
+    try {
+      const response = await this._requestBybitAudit(path, params, timeoutMs);
+      const payload = this._normalizeProxyResponseData(response.data);
+      const records = this._countBybitRecords(capability, payload);
+
+      if (payload?.retCode !== 0) {
+        throw new Error(`Bybit retCode ${payload?.retCode}: ${payload?.retMsg || 'unknown'}`);
+      }
+
+      return this._buildAuditProbe({
+        capability,
+        available: records > 0,
+        source: response.source,
+        records,
+        latencyMs: Date.now() - startedAt,
+        error: records > 0 ? null : 'empty response',
+      });
+    } catch (error) {
+      return this._buildAuditProbe({
+        capability,
+        available: false,
+        source: null,
+        records: 0,
+        latencyMs: Date.now() - startedAt,
+        error: this._formatAuditError(error),
+      });
+    }
+  }
+
+  async _probeOkxRest(capability, path, params, timeoutMs, options = {}) {
+    const startedAt = Date.now();
+
+    try {
+      const response = await axios.get(`${OKX_PUBLIC_BASE}${path}`, {
+        params,
+        timeout: timeoutMs,
+      });
+      const payload = response.data;
+
+      if (payload?.code !== '0') {
+        throw new Error(`OKX code ${payload?.code}: ${payload?.msg || 'unknown'}`);
+      }
+
+      const records = this._countOkxRecords(capability, payload);
+      const available = records > 0 || options.emptyIsAvailable === true;
+
+      return this._buildAuditProbe({
+        capability,
+        available,
+        source: 'OKX',
+        records,
+        latencyMs: Date.now() - startedAt,
+        error: available ? null : 'empty response',
+        note: available && records === 0 ? 'endpoint available; no recent events' : null,
+      });
+    } catch (error) {
+      return this._buildAuditProbe({
+        capability,
+        available: false,
+        source: 'OKX',
+        records: 0,
+        latencyMs: Date.now() - startedAt,
+        error: this._formatAuditError(error),
+      });
+    }
+  }
+
+  async _requestBybitAudit(path, params, timeoutMs) {
+    const attempts = [];
+
+    if (this.supabaseProxyUrl) {
+      try {
+        const response = await axios.get(this.supabaseProxyUrl, {
+          params: {
+            path,
+            params: new URLSearchParams(
+              Object.entries(params).map(([key, value]) => [key, String(value)])
+            ).toString(),
+          },
+          headers: this._getSupabaseProxyHeaders(),
+          timeout: timeoutMs,
+        });
+        return { data: response.data, source: 'BYBIT_PROXY' };
+      } catch (error) {
+        attempts.push(`proxy:${error.response?.status || error.message}`);
+      }
+    }
+
+    for (const host of this.extremeAuditRestBases) {
+      try {
+        const response = await axios.get(`https://${host}${path}`, {
+          params,
+          timeout: timeoutMs,
+        });
+        return { data: response.data, source: `BYBIT:${host}` };
+      } catch (error) {
+        attempts.push(`${host}:${error.response?.status || error.message}`);
+      }
+    }
+
+    throw new Error(`all routes failed (${attempts.join(', ')})`);
+  }
+
+  _probeBybitLiquidationStream(pair, timeoutMs) {
+    const startedAt = Date.now();
+
+    return new Promise((resolve) => {
+      let settled = false;
+      let ws = null;
+
+      const finish = (result) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (ws) {
+          ws.removeAllListeners();
+          ws.terminate();
+        }
+        resolve(this._buildAuditProbe({
+          capability: 'liquidations',
+          latencyMs: Date.now() - startedAt,
+          ...result,
+        }));
+      };
+
+      const timer = setTimeout(() => {
+        finish({
+          available: false,
+          source: 'BYBIT_WS',
+          records: 0,
+          error: 'subscription acknowledgement timeout',
+        });
+      }, timeoutMs);
+
+      try {
+        ws = new WebSocket(this.extremeAuditWsUrl);
+        ws.on('open', () => {
+          ws.send(JSON.stringify({
+            op: 'subscribe',
+            args: [`allLiquidation.${pair}`],
+          }));
+        });
+        ws.on('message', (data) => {
+          try {
+            const message = JSON.parse(data.toString());
+            if (message.op === 'subscribe') {
+              if (message.success) {
+                finish({
+                  available: true,
+                  source: 'BYBIT_WS',
+                  records: 0,
+                  error: null,
+                  note: 'subscription available; no event required',
+                });
+              } else {
+                finish({
+                  available: false,
+                  source: 'BYBIT_WS',
+                  records: 0,
+                  error: message.ret_msg || 'subscription rejected',
+                });
+              }
+            } else if (message.topic === `allLiquidation.${pair}`) {
+              finish({
+                available: true,
+                source: 'BYBIT_WS',
+                records: Array.isArray(message.data) ? message.data.length : 0,
+                error: null,
+              });
+            }
+          } catch (error) {
+            finish({
+              available: false,
+              source: 'BYBIT_WS',
+              records: 0,
+              error: `invalid websocket JSON: ${error.message}`,
+            });
+          }
+        });
+        ws.on('error', (error) => {
+          finish({
+            available: false,
+            source: 'BYBIT_WS',
+            records: 0,
+            error: error.message,
+          });
+        });
+        ws.on('close', () => {
+          finish({
+            available: false,
+            source: 'BYBIT_WS',
+            records: 0,
+            error: 'connection closed before acknowledgement',
+          });
+        });
+      } catch (error) {
+        finish({
+          available: false,
+          source: 'BYBIT_WS',
+          records: 0,
+          error: error.message,
+        });
+      }
+    });
+  }
+
+  _countBybitRecords(capability, payload) {
+    if (capability === 'orderbook') {
+      const bids = payload?.result?.b || [];
+      const asks = payload?.result?.a || [];
+      return bids.length + asks.length;
+    }
+
+    return Array.isArray(payload?.result?.list) ? payload.result.list.length : 0;
+  }
+
+  _countOkxRecords(capability, payload) {
+    if (capability === 'orderbook') {
+      const book = payload?.data?.[0] || {};
+      return (book.bids || []).length + (book.asks || []).length;
+    }
+
+    if (capability === 'liquidations') {
+      return (payload?.data || []).reduce(
+        (count, group) => count + (Array.isArray(group.details) ? group.details.length : 0),
+        0
+      );
+    }
+
+    return Array.isArray(payload?.data) ? payload.data.length : 0;
+  }
+
+  _buildAuditProbe({
+    capability,
+    available,
+    source,
+    records,
+    latencyMs,
+    error = null,
+    note = null,
+  }) {
+    return {
+      capability,
+      available: available === true,
+      source,
+      records: Number(records || 0),
+      latencyMs: Number(latencyMs || 0),
+      error,
+      note,
+    };
+  }
+
+  _formatAuditError(error) {
+    const status = error.response?.status;
+    const data = error.response?.data || {};
+    const message = data.error || data.message || error.message || 'unknown error';
+    return [status, message].filter(Boolean).join(' ');
+  }
+
   async _requestPublicMarket(path, params) {
     let lastError = null;
 
@@ -708,6 +1047,17 @@ class BybitDataProvider {
     if (process.env.PUMP_HUNTER_USE_TESTNET === 'true') return [this.restBase];
 
     const configured = String(process.env.PUMP_HUNTER_REST_BASES || '')
+      .split(',')
+      .map((host) => host.trim())
+      .filter(Boolean);
+
+    return configured.length
+      ? configured
+      : ['api.bybit.com', 'api.bytick.com', 'api.bytick.nl', 'api.bybit-tr.com', 'api.bybit.kz'];
+  }
+
+  _getExtremeAuditRestBases() {
+    const configured = String(process.env.EXTREME_REST_BASES || '')
       .split(',')
       .map((host) => host.trim())
       .filter(Boolean);

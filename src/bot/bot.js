@@ -8,6 +8,7 @@ const SupabaseClient = require('../data/supabaseClient');
 const SignalDetector = require('../engine/signalDetector');
 const CandidateEngine = require('../engine/candidateEngine');
 const PumpHunterEngine = require('../engine/pumpHunterEngine');
+const ExtremeDataAudit = require('../engine/extremeDataAudit');
 const RiskManager = require('../engine/riskManager');
 const FeeCalculator = require('../engine/feeCalculator');
 const PositionMonitor = require('../engine/positionMonitor');
@@ -19,6 +20,7 @@ const PaperSignalStats = require('../analytics/paperSignalStats');
 const ResearchReadiness = require('../analytics/researchReadiness');
 const CandidateFormatter = require('../analytics/candidateFormatter');
 const PumpHunterFormatter = require('../analytics/pumpHunterFormatter');
+const ExtremeAuditFormatter = require('../analytics/extremeAuditFormatter');
 const { formatDetailedAnalytics } = require('../analytics/formatters');
 const { CURRENT_STRATEGY_VERSION, LEGACY_STRATEGY_VERSION } = require('../config/strategy');
 const { MARKET_CONTEXT_V1_ENABLED } = require('../config/marketContext');
@@ -45,6 +47,10 @@ const {
   PUMP_V2_SHADOW_MAX_PER_CYCLE,
 } = require('../config/pumpHunter');
 const {
+  EXTREME_AUDIT_SYMBOL,
+  EXTREME_AUDIT_TIMEOUT_MS,
+} = require('../config/extremeRadar');
+const {
   PAPER_SIGNAL_TRACKING_ENABLED,
   PAPER_SIGNAL_TTL_MINUTES,
   CANDIDATE_AUTO_SCAN_ENABLED,
@@ -61,6 +67,7 @@ const BOT_COMMANDS = [
   { command: 'menu', description: 'Главная панель' },
   { command: 'candidates', description: 'Candidate Engine' },
   { command: 'pump', description: 'PumpHunter Lab' },
+  { command: 'extreme', description: 'Extreme Radar · аудит данных' },
   { command: 'signals', description: 'Paper результаты' },
   { command: 'research', description: 'Готовность исследования' },
   { command: 'status', description: 'Состояние системы' },
@@ -150,6 +157,7 @@ class ScalpArenaBot {
     this.bot.onText(/\/candidate_?auto(?:\s+(\S+))?/, this._safe((msg, match) => this._onCandidateAuto(msg, match)));
     this.bot.onText(/\/pump_?auto(?:\s+(\S+))?/, this._safe((msg, match) => this._onPumpAuto(msg, match)));
     this.bot.onText(/\/pump(?:\s+(\S+))?$/, this._safe((msg) => this._onPump(msg)));
+    this.bot.onText(/\/extreme(?:@\w+)?(?:\s+.*)?$/, this._safe((msg) => this._onExtreme(msg)));
     this.bot.onText(/\/signals/, this._safe((msg) => this._onSignals(msg)));
     this.bot.onText(/\/research(?:@\w+)?$/, this._safe((msg) => this._onResearch(msg)));
     this.bot.onText(/\/signal_stats/, this._safe((msg) => this._onSignals(msg)));
@@ -777,6 +785,49 @@ ${insights}
     }
 
     return this._sendPumpHunter(userId, mode);
+  }
+
+  async _onExtreme(msg) {
+    const userId = String(msg.chat.id);
+    const parts = this._getCommandParts(msg.text);
+    const mode = String(parts[1] || 'status').toLowerCase();
+
+    if (mode !== 'debug') {
+      return this._sendPlain(
+        userId,
+        [
+          '⚡ Extreme Radar',
+          '━━━━━━━━━━━━━━━━━━━━',
+          'Сейчас доступен только Шаг 1: аудит источников.',
+          'Сигналы, автосканирование и paper-записи выключены.',
+          '',
+          `Проверить базовую пару: /extreme debug`,
+          'Проверить монету: /extreme debug DEXEUSDT',
+        ].join('\n')
+      );
+    }
+
+    const pair = parts[2] || EXTREME_AUDIT_SYMBOL;
+    let normalizedPair;
+
+    try {
+      normalizedPair = ExtremeDataAudit.normalizePair(pair);
+    } catch (error) {
+      return this._sendPlain(
+        userId,
+        '❌ Неверная пара. Используй формат /extreme debug BTCUSDT'
+      );
+    }
+
+    await this._sendPlain(
+      userId,
+      `⚡ Extreme Radar проверяет данные ${normalizedPair}. Сигналы не запускаются...`
+    );
+
+    const report = await ExtremeDataAudit.run(this.provider, normalizedPair, {
+      timeoutMs: EXTREME_AUDIT_TIMEOUT_MS,
+    });
+    return this._sendPlain(userId, ExtremeAuditFormatter.format(report));
   }
 
   async _sendPumpHunterDebug(userId) {
@@ -1566,6 +1617,8 @@ ${insights}`
 /menu — главная панель и автопоиск
 /candidates — Candidate Engine сейчас
 /pump — PumpHunter сейчас
+/extreme — статус Extreme Radar
+/extreme debug DEXEUSDT — аудит рыночных данных
 /signals 7 — результаты текущего эксперимента
 /research — готовность новых выборок
 /status — автопоиск, наблюдения и режимы
@@ -1590,6 +1643,7 @@ ${insights}`
 /candidates full
 /pump full
 /pump debug
+/extreme debug
 
 Live-сделки на Bybit отключены. Бот собирает и проверяет paper-сигналы.`
     );
