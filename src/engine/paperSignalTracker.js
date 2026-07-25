@@ -2,6 +2,7 @@ const {
   PAPER_SIGNAL_TRACKING_ENABLED,
   PAPER_SIGNAL_TRACK_INTERVAL_MS,
 } = require('../config/paperSignals');
+const StagedExitSimulator = require('../analytics/stagedExitSimulator');
 
 class PaperSignalTracker {
   constructor(bot, db, provider) {
@@ -68,11 +69,18 @@ class PaperSignalTracker {
     const extremes = currentPrice
       ? this._calculateExtremes({ ...signal, ...pathResult.extremes }, currentPrice, direction)
       : pathResult.extremes;
+    const researchUpdates = this._getStagedExitUpdates(
+      signal,
+      candles,
+      timeoutOutcome,
+      currentPrice,
+      now
+    );
 
     if (!currentPrice && !candles.length && !timeoutOutcome) return;
 
     if (!outcome) {
-      await this.db.updatePaperSignal(signal.id, extremes);
+      await this.db.updatePaperSignal(signal.id, { ...extremes, ...researchUpdates });
       return;
     }
 
@@ -96,6 +104,7 @@ class PaperSignalTracker {
         : null,
       resolved_candle_high: outcome.candle?.high ?? null,
       resolved_candle_low: outcome.candle?.low ?? null,
+      ...researchUpdates,
     });
 
     if (!this._isSilentShadowSignal(signal)) {
@@ -259,6 +268,43 @@ class PaperSignalTracker {
       ['PUMP_STATE_V2_SHADOW', 'PUMP_STATE_V2_1_SHADOW'].includes(signal.strategy) ||
       signal.source === 'PUMP_V2_SHADOW'
     );
+  }
+
+  _getStagedExitUpdates(signal, candles, timeoutOutcome, currentPrice, now) {
+    if (!this._isPumpV21Signal(signal) || !candles.length) return {};
+
+    const simulation = StagedExitSimulator.simulate(signal, candles, {
+      timedOut: timeoutOutcome?.status === 'TIMEOUT',
+      currentPrice,
+      currentTimestamp: now?.getTime(),
+    });
+    if (!simulation) return {};
+
+    return {
+      signal_metadata: {
+        ...this._parseSignalMetadata(signal.signal_metadata),
+        stagedExitSimulation: simulation,
+      },
+    };
+  }
+
+  _isPumpV21Signal(signal) {
+    return (
+      signal.project === 'PUMP_V2_SHADOW' &&
+      signal.strategy === 'PUMP_STATE_V2_1_SHADOW'
+    );
+  }
+
+  _parseSignalMetadata(metadata) {
+    if (!metadata) return {};
+    if (typeof metadata === 'object') return metadata;
+
+    try {
+      const parsed = JSON.parse(metadata);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (_error) {
+      return {};
+    }
   }
 
   _calculateExtremes(signal, currentPrice, direction) {

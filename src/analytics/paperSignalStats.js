@@ -1,5 +1,6 @@
 const RiskManager = require('../engine/riskManager');
 const FeeCalculator = require('../engine/feeCalculator');
+const StagedExitSimulator = require('./stagedExitSimulator');
 const { PAPER_SIGNAL_SLIPPAGE_BPS } = require('../config/paperSignals');
 
 class PaperSignalStats {
@@ -327,6 +328,78 @@ class PaperSignalStats {
     return lines.join('\n');
   }
 
+  static formatStagedExitStudy(signals = [], title = 'период', options = {}) {
+    if (!signals.length) {
+      return `📭 STAGED EXIT STUDY\n\nЗа ${title} сигналов пока нет.`;
+    }
+
+    const moneyModel = this._buildMoneyModel(signals, options);
+    const summaries = StagedExitSimulator.PROFILES.map((profile) => (
+      this._summarizeStagedProfile(signals, profile, moneyModel, options)
+    ));
+    const measured = Math.max(...summaries.map((summary) => summary.measured), 0);
+    const lines = [
+      '🧪 STAGED EXIT STUDY',
+      '════════════════════════════════',
+      `Период: ${title}`,
+      '',
+      'Research-only: действующие TP/SL не изменены.',
+      'Схема: 50% на TP1, остаток → безубыток со следующей свечи, затем основной TP.',
+    ];
+
+    if (!measured) {
+      lines.push(
+        '',
+        'Точных свечных симуляций пока нет.',
+        'Они начнут появляться у новых Pump V2.1 сигналов после следующего цикла tracker.'
+      );
+      return lines.join('\n');
+    }
+
+    if (moneyModel) {
+      lines.push(
+        '',
+        `💵 Модель: баланс $${moneyModel.balance} | margin $${moneyModel.margin} | ` +
+        `leverage ${moneyModel.leverage}x | notional $${moneyModel.notional}`,
+        `Комиссии включены | slippage ${this._getSlippageBps(options)} bps/сторону | ` +
+        'без лимита одновременных позиций'
+      );
+    }
+
+    summaries.forEach((summary) => {
+      lines.push(
+        '',
+        `🎯 TP1 +${summary.tp1Percent}% (50%) → BE`,
+        `Измерено: ${summary.measured} | завершено: ${summary.resolved} | наблюдается: ${summary.watching}`,
+        `TP1 достигнут: ${summary.tp1Hit}/${summary.measured} ` +
+        `(${this._formatPercent(this._rate(summary.tp1Hit, summary.measured))})`,
+        `Финал: target ${summary.target} | BE ${summary.be} | SL до TP1 ${summary.sl} | ` +
+        `timeout ${summary.timeout} | ambiguous ${summary.ambiguous}`
+      );
+
+      if (summary.money) {
+        lines.push(
+          `Net: ${summary.money.netPnl >= 0 ? '+' : ''}$${summary.money.netPnl} | ` +
+          `avg ${summary.money.avgPnl >= 0 ? '+' : ''}$${summary.money.avgPnl} | ` +
+          `W/L ${summary.money.wins}/${summary.money.losses} | PF ${summary.money.profitFactor ?? 'n/a'} | ` +
+          `fees $${summary.money.totalFees}`
+        );
+      }
+    });
+
+    const comparable = summaries.filter((summary) => summary.money && summary.resolved > 0);
+    if (comparable.length === summaries.length) {
+      const best = comparable.slice().sort((a, b) => b.money.netPnl - a.money.netPnl)[0];
+      lines.push(
+        '',
+        `📌 Пока лучше: TP1 +${best.tp1Percent}% по net $${best.money.netPnl}.`,
+        'Решение об изменении выходов принимаем только после достаточной выборки.'
+      );
+    }
+
+    return lines.join('\n');
+  }
+
   static _calculateResolutionQuality(signals = []) {
     const measured = signals.filter((signal) => signal.resolution_method);
 
@@ -516,17 +589,114 @@ class PaperSignalStats {
   }
 
   static _getMarketContext(signal) {
+    const metadata = this._getSignalMetadata(signal);
+    const context = metadata?.marketContext;
+    return context && typeof context === 'object' ? context : null;
+  }
+
+  static _getSignalMetadata(signal) {
     let metadata = signal?.signal_metadata ?? signal?.signalMetadata;
     if (typeof metadata === 'string') {
       try {
         metadata = JSON.parse(metadata);
       } catch (_error) {
-        return null;
+        return {};
       }
     }
 
-    const context = metadata?.marketContext;
-    return context && typeof context === 'object' ? context : null;
+    return metadata && typeof metadata === 'object' ? metadata : {};
+  }
+
+  static _summarizeStagedProfile(signals, profile, moneyModel, options = {}) {
+    const measured = signals
+      .map((signal) => ({
+        signal,
+        result: this._getSignalMetadata(signal)?.stagedExitSimulation?.profiles?.[profile.key],
+      }))
+      .filter((item) => item.result);
+    const resolved = measured.filter((item) => item.result.status !== 'WATCHING');
+
+    return {
+      key: profile.key,
+      tp1Percent: profile.tp1Percent,
+      measured: measured.length,
+      resolved: resolved.length,
+      watching: measured.length - resolved.length,
+      tp1Hit: measured.filter((item) => item.result.tp1Hit === true).length,
+      target: resolved.filter((item) => item.result.status === 'TARGET_HIT').length,
+      be: resolved.filter((item) => item.result.status === 'BE_HIT').length,
+      sl: resolved.filter((item) => item.result.status === 'SL_HIT').length,
+      timeout: resolved.filter((item) => item.result.status === 'TIMEOUT').length,
+      ambiguous: resolved.filter((item) => item.result.ambiguous === true).length,
+      money: moneyModel
+        ? this._calculateStagedMoney(resolved, moneyModel, options)
+        : null,
+    };
+  }
+
+  static _calculateStagedMoney(items, moneyModel, options = {}) {
+    const slippageBps = this._getSlippageBps(options);
+    const values = [];
+    let totalFees = 0;
+    let grossProfit = 0;
+    let grossLoss = 0;
+    let wins = 0;
+    let losses = 0;
+
+    items.forEach(({ signal, result }) => {
+      const entryPrice = this._positiveNumber(signal.entry_price);
+      if (!entryPrice || !Array.isArray(result.legs)) return;
+
+      const direction = String(signal.direction || 'LONG').toUpperCase();
+      let signalPnl = 0;
+
+      result.legs.forEach((leg) => {
+        const exitPrice = this._positiveNumber(leg.price);
+        const fraction = Number(leg.fraction);
+        if (!exitPrice || !Number.isFinite(fraction) || fraction <= 0) return;
+
+        const adjusted = this._applyAdverseSlippage(
+          entryPrice,
+          exitPrice,
+          direction,
+          slippageBps
+        );
+        const pnl = FeeCalculator.calculatePnL({
+          entryPrice: adjusted.entryPrice,
+          exitPrice: adjusted.exitPrice,
+          margin: moneyModel.margin * fraction,
+          leverage: moneyModel.leverage,
+          direction,
+        });
+        signalPnl += pnl.netPnl;
+        totalFees += pnl.totalFees;
+      });
+
+      values.push(signalPnl);
+      if (signalPnl > 0) {
+        wins += 1;
+        grossProfit += signalPnl;
+      } else if (signalPnl < 0) {
+        losses += 1;
+        grossLoss += Math.abs(signalPnl);
+      }
+    });
+
+    const netPnl = values.reduce((sum, value) => sum + value, 0);
+    return {
+      netPnl: this._round(netPnl, 2),
+      avgPnl: this._round(values.length ? netPnl / values.length : 0, 2),
+      wins,
+      losses,
+      profitFactor: grossLoss > 0 ? this._round(grossProfit / grossLoss, 2) : null,
+      totalFees: this._round(totalFees, 2),
+    };
+  }
+
+  static _getSlippageBps(options = {}) {
+    return Number.isFinite(Number(options.slippageBps))
+      ? Math.max(0, Number(options.slippageBps))
+      : PAPER_SIGNAL_SLIPPAGE_BPS;
   }
 
   static _detailGroup(signals, getKey) {

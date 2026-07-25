@@ -8,6 +8,7 @@ const legacy = bot._parsePaperSignalStatsArgs(['legacy', 'candidates', '30']);
 const history = bot._parsePaperSignalStatsArgs(['history', 'pump', 'all']);
 const shadow = bot._parsePaperSignalStatsArgs(['candidate_v2', 'detail', '7']);
 const pumpShadow = bot._parsePaperSignalStatsArgs(['pump_v2', 'edge', '30']);
+const pumpStagedExit = bot._parsePaperSignalStatsArgs(['pump_v2', 'exits', '30']);
 const pumpBaseline = bot._parsePaperSignalStatsArgs(['pump_v2_baseline', 'detail', '30']);
 
 const checks = [
@@ -34,6 +35,12 @@ const checks = [
   {
     name: 'Pump shadow report has an isolated project selector',
     pass: pumpShadow.project === 'pump_v2' && pumpShadow.mode === 'edge' && pumpShadow.period === '30',
+  },
+  {
+    name: 'Pump staged exit study has an explicit report mode',
+    pass: pumpStagedExit.project === 'pump_v2' &&
+      pumpStagedExit.mode === 'staged_exit' &&
+      pumpStagedExit.period === '30',
   },
   {
     name: 'Pump baseline remains available as a frozen comparison',

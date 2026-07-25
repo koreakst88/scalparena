@@ -109,6 +109,8 @@ Telegram команды:
 
 Pump State Machine V2 работает параллельно и не меняет основной PumpHunter. Он требует последовательность ignition → breakout → low-volume retest → reclaim, пишет только `ENTRY_READY` в отдельный silent shadow-проект и не отправляет Telegram-алерты. Отчёт: `/signals pump_v2 7`.
 
+Для Pump V2.1 tracker параллельно считает research-only staged exits по свечному пути: 50% позиции на TP1 `+2%` или `+3%`, затем перенос остатка в безубыток со следующей свечи и сопровождение до исходного структурного TP. Основные TP/SL сигнала не меняются. Сравнение с комиссиями и проскальзыванием: `/signals pump_v2 exits 30`.
+
 ## Deployment
 
 На Railway - см. `deployment/Procfile`

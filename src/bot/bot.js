@@ -1071,6 +1071,16 @@ ${insights}`
       return;
     }
 
+    if (options.mode === 'staged_exit') {
+      await this._sendPlainChunks(
+        userId,
+        PaperSignalStats.formatStagedExitStudy(projectSignals, title, {
+          balance: statsUser?.account_balance || 200,
+        })
+      );
+      return;
+    }
+
     const stats = PaperSignalStats.calculate(projectSignals, {
       balance: statsUser?.account_balance || 200,
     });
@@ -1097,6 +1107,8 @@ ${insights}`
         mode = 'detail';
       } else if (['edge', 'mfe', 'profit'].includes(value)) {
         mode = 'edge';
+      } else if (['exit', 'exits', 'staged', 'tp1'].includes(value)) {
+        mode = 'staged_exit';
       } else if (['pump', 'pumphunter'].includes(value)) {
         project = 'pump';
       } else if (['candidate', 'candidates'].includes(value)) {
@@ -1563,6 +1575,7 @@ ${insights}`
 /signals candidate_v2 detail 30
 /signals candidate_v1 detail 30
 /signals pump_v2 detail 30
+/signals pump_v2 exits 30
 /signals pump_v2_baseline detail 30
 /signals open candidates
 /signals open pump

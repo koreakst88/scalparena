@@ -113,6 +113,26 @@ const shadowTracker = new PaperSignalTracker(
     getCandles: () => [tpCandle],
   }
 );
+let persistedStagedExit = null;
+const stagedTracker = new PaperSignalTracker(
+  { _sendPlain: async () => {} },
+  {
+    updatePaperSignal: async (_id, updates) => {
+      persistedStagedExit = updates;
+    },
+  },
+  {
+    getCurrentCandle: () => null,
+    getCandles: () => [],
+    getOkxSwapKlines: async () => [{
+      timestamp: pathStart + 60 * 1000,
+      high: 102.4,
+      low: 100.2,
+      close: 102,
+    }],
+    getOkxSwapPrice: async () => 102,
+  }
+);
 
 Promise.resolve()
   .then(async () => {
@@ -141,6 +161,25 @@ Promise.resolve()
       project: 'CANDIDATE_V2_SHADOW',
       strategy: 'BREAKOUT_V2_SHADOW',
       source: 'CANDIDATE_V2_SHADOW',
+    });
+    await stagedTracker._checkSignal({
+      id: 'pump-v2-1',
+      user_id: '42',
+      pair: 'PUMPV2USDT',
+      project: 'PUMP_V2_SHADOW',
+      strategy: 'PUMP_STATE_V2_1_SHADOW',
+      source: 'PUMP_V2_SHADOW',
+      market_source: 'OKX_SWAP_FALLBACK',
+      direction: 'LONG',
+      entry_price: 100,
+      stop_loss: 96,
+      take_profit: 106,
+      created_at: new Date(pathStart).toISOString(),
+      expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      timeframe: '15',
+      signal_metadata: {
+        marketContext: { state: 'RISK_ON', decision: 'ALLOW' },
+      },
     });
 
     const checks = [
@@ -215,6 +254,12 @@ Promise.resolve()
     name: 'Pump V2 is recognized as source-aware and silent',
     pass: tracker._isPumpHunterSignal({ project: 'PUMP_V2_SHADOW' }) &&
       tracker._isSilentShadowSignal({ source: 'PUMP_V2_SHADOW' }),
+  },
+  {
+    name: 'Pump V2.1 tracker persists staged TP1 research without losing metadata',
+    pass: persistedStagedExit?.signal_metadata?.marketContext?.decision === 'ALLOW' &&
+      persistedStagedExit?.signal_metadata?.stagedExitSimulation?.profiles
+        ?.TP1_2_BE?.tp1Hit === true,
   },
     ];
 
