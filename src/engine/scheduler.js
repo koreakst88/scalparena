@@ -5,6 +5,7 @@ const CandidateEngine = require('./candidateEngine');
 const CandidateBreakoutV3 = require('./candidateBreakoutV3');
 const PumpHunterEngine = require('./pumpHunterEngine');
 const PumpStateMachineV2 = require('./pumpStateMachineV2');
+const ExtremeWideRadar = require('./extremeWideRadar');
 const MarketContextV1 = require('./marketContextV1');
 const RiskManager = require('./riskManager');
 const {
@@ -39,6 +40,10 @@ const {
   PAPER_PROJECTS,
 } = require('../config/paperExperiment');
 const { MARKET_CONTEXT_V1_ENABLED } = require('../config/marketContext');
+const {
+  EXTREME_WIDE_SCAN_ENABLED,
+  EXTREME_WIDE_SCAN_INTERVAL_MS,
+} = require('../config/extremeRadar');
 
 const SCAN_INTERVAL_MS = 15 * 60 * 1000;
 const SEOUL_TIMEZONE = process.env.TIMEZONE || 'Asia/Seoul';
@@ -51,13 +56,16 @@ class Scheduler {
     this.scanTimer = null;
     this.candidateScanTimer = null;
     this.pumpScanTimer = null;
+    this.extremeWideScanTimer = null;
     this.resetTimer = null;
     this.lastScanTime = null;
     this.lastCandidateScanTime = null;
     this.lastPumpScanTime = null;
+    this.lastExtremeWideScanTime = null;
     this.candidateAlertCooldowns = new Map();
     this.pumpAlertCooldowns = new Map();
     this.candidateDiagnosticsUnavailable = false;
+    this.extremeDiagnosticsUnavailable = false;
   }
 
   start() {
@@ -74,11 +82,20 @@ class Scheduler {
       () => this._pumpAutoScan(),
       PUMP_AUTO_SCAN_INTERVAL_MS
     );
+    if (EXTREME_WIDE_SCAN_ENABLED) {
+      this.extremeWideScanTimer = setInterval(
+        () => this._extremeWideDiagnosticScan(),
+        EXTREME_WIDE_SCAN_INTERVAL_MS
+      );
+    }
     this._scheduleDailyReset();
 
     setTimeout(() => this._autoScan(), 5 * 60 * 1000);
     setTimeout(() => this._candidateAutoScan(), 6 * 60 * 1000);
     setTimeout(() => this._pumpAutoScan(), 7 * 60 * 1000);
+    if (EXTREME_WIDE_SCAN_ENABLED) {
+      setTimeout(() => this._extremeWideDiagnosticScan(), 8 * 60 * 1000);
+    }
 
     console.log('✅ Auto-scan every 15 min | Daily reset at 08:00 Seoul');
     console.log(
@@ -88,6 +105,11 @@ class Scheduler {
     console.log(
       `🚀 Pump auto-scan every ${Math.round(PUMP_AUTO_SCAN_INTERVAL_MS / 60000)} min ` +
       `| score>=${PUMP_AUTO_MIN_SCORE} max=${PUMP_AUTO_MAX_ALERTS}`
+    );
+    console.log(
+      `⚡ Extreme wide diagnostics: ${EXTREME_WIDE_SCAN_ENABLED ? 'ON' : 'OFF'} ` +
+      `| interval ${Math.round(EXTREME_WIDE_SCAN_INTERVAL_MS / 60000)} min ` +
+      '| alerts=OFF events=OFF'
     );
     console.log('⏳ First auto-scan in 5 minutes (WS data accumulation)');
   }
@@ -104,6 +126,10 @@ class Scheduler {
     if (this.pumpScanTimer) {
       clearInterval(this.pumpScanTimer);
       this.pumpScanTimer = null;
+    }
+    if (this.extremeWideScanTimer) {
+      clearInterval(this.extremeWideScanTimer);
+      this.extremeWideScanTimer = null;
     }
     if (this.resetTimer) {
       clearTimeout(this.resetTimer);
@@ -232,6 +258,44 @@ class Scheduler {
       }
     } catch (error) {
       console.error('❌ PumpHunter auto-scan error:', error.message);
+    }
+  }
+
+  async _extremeWideDiagnosticScan() {
+    if (!EXTREME_WIDE_SCAN_ENABLED || this.extremeDiagnosticsUnavailable) return null;
+
+    console.log('⚡ Extreme wide diagnostic scan triggered...');
+    this.lastExtremeWideScanTime = new Date();
+
+    try {
+      const scan = await ExtremeWideRadar.scan(this.provider);
+      await this.db.createResearchScanDiagnostic(
+        ExtremeWideRadar.toDiagnostic(scan)
+      );
+      console.log(
+        `⚡ Extreme wide diagnostics: source=${scan.marketSource} ` +
+        `scanned=${scan.scannedPairs} liquid=${scan.eligiblePairs} ` +
+        `anomalies=${scan.anomalyCount} events=0 alerts=0`
+      );
+      return scan;
+    } catch (error) {
+      const message = String(error?.message || '');
+      const missingTable = (
+        error?.code === '42P01' ||
+        error?.code === 'PGRST205' ||
+        message.includes('research_scan_diagnostics')
+      );
+
+      if (missingTable) {
+        this.extremeDiagnosticsUnavailable = true;
+        console.warn(
+          '⚠️ Extreme diagnostics disabled: research_scan_diagnostics migration is missing'
+        );
+        return null;
+      }
+
+      console.error('❌ Extreme wide diagnostic scan failed:', message);
+      return null;
     }
   }
 
@@ -1006,6 +1070,11 @@ ${paperSignal ? '\n🧪 Paper signal записан для отслеживан�
       nextCandidateScan: new Date(Date.now() + CANDIDATE_AUTO_SCAN_INTERVAL_MS),
       lastPumpScan: this.lastPumpScanTime,
       nextPumpScan: new Date(Date.now() + PUMP_AUTO_SCAN_INTERVAL_MS),
+      extremeWideEnabled: EXTREME_WIDE_SCAN_ENABLED,
+      lastExtremeWideScan: this.lastExtremeWideScanTime,
+      nextExtremeWideScan: EXTREME_WIDE_SCAN_ENABLED
+        ? new Date(Date.now() + EXTREME_WIDE_SCAN_INTERVAL_MS)
+        : null,
       cryptoMarketOpen: true,
       msUntilReset: this._getMsUntilNext8am(),
     };

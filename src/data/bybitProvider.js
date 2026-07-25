@@ -538,6 +538,51 @@ class BybitDataProvider {
     }
   }
 
+  async getGateFuturesTickers() {
+    try {
+      const response = await axios.get(`${GATE_FUTURES_BASE}/tickers`, {
+        timeout: 20000,
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+
+      return (response.data || [])
+        .filter((ticker) => String(ticker.contract || '').endsWith('_USDT'))
+        .map((ticker) => {
+          const lastPrice = Number(ticker.last);
+          const multiplier = Number(ticker.quanto_multiplier);
+          const totalSize = Number(ticker.total_size);
+          const openInterestUsd = (
+            Number.isFinite(lastPrice) &&
+            Number.isFinite(multiplier) &&
+            Number.isFinite(totalSize)
+          ) ? lastPrice * multiplier * totalSize : null;
+
+          return {
+            symbol: this._gateContractToSymbol(ticker.contract),
+            contract: ticker.contract,
+            lastPrice,
+            high24h: Number(ticker.high_24h),
+            low24h: Number(ticker.low_24h),
+            priceChange24hPercent: Number(ticker.change_percentage),
+            turnover24h: Number(ticker.volume_24h_quote || ticker.volume_24h_settle),
+            fundingRate: Number(ticker.funding_rate),
+            openInterestUsd,
+            bidPrice: Number(ticker.highest_bid),
+            askPrice: Number(ticker.lowest_ask),
+            marketSource: 'GATE',
+          };
+        });
+    } catch (error) {
+      console.error(
+        '❌ Gate futures tickers request failed:',
+        error.response?.status || error.message
+      );
+      return [];
+    }
+  }
+
   async auditBybitExtremeData(pair, options = {}) {
     const timeoutMs = options.timeoutMs || EXTREME_AUDIT_DEFAULT_TIMEOUT_MS;
     const [restProbes, websocketProbes] = await Promise.all([
@@ -1034,6 +1079,10 @@ class BybitDataProvider {
   _symbolToGateContract(symbol) {
     const base = String(symbol || '').replace(/USDT$/, '');
     return `${base}_USDT`;
+  }
+
+  _gateContractToSymbol(contract) {
+    return String(contract || '').replace(/_USDT$/, 'USDT').replace(/_/g, '');
   }
 
   _countBybitRecords(capability, payload) {

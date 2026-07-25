@@ -9,6 +9,7 @@ const SignalDetector = require('../engine/signalDetector');
 const CandidateEngine = require('../engine/candidateEngine');
 const PumpHunterEngine = require('../engine/pumpHunterEngine');
 const ExtremeDataAudit = require('../engine/extremeDataAudit');
+const ExtremeWideRadar = require('../engine/extremeWideRadar');
 const RiskManager = require('../engine/riskManager');
 const FeeCalculator = require('../engine/feeCalculator');
 const PositionMonitor = require('../engine/positionMonitor');
@@ -21,6 +22,7 @@ const ResearchReadiness = require('../analytics/researchReadiness');
 const CandidateFormatter = require('../analytics/candidateFormatter');
 const PumpHunterFormatter = require('../analytics/pumpHunterFormatter');
 const ExtremeAuditFormatter = require('../analytics/extremeAuditFormatter');
+const ExtremeWideFormatter = require('../analytics/extremeWideFormatter');
 const { formatDetailedAnalytics } = require('../analytics/formatters');
 const { CURRENT_STRATEGY_VERSION, LEGACY_STRATEGY_VERSION } = require('../config/strategy');
 const { MARKET_CONTEXT_V1_ENABLED } = require('../config/marketContext');
@@ -52,6 +54,8 @@ const {
   EXTREME_PAPER_SIGNALS_ENABLED,
   EXTREME_PROJECT,
   EXTREME_EXPERIMENT_ID,
+  EXTREME_WIDE_SCAN_ENABLED,
+  EXTREME_WIDE_SCAN_INTERVAL_MS,
   EXTREME_AUDIT_SYMBOL,
   EXTREME_AUDIT_TIMEOUT_MS,
 } = require('../config/extremeRadar');
@@ -825,20 +829,50 @@ ${insights}
           `Активных research-событий: ${activeEvents}`,
           '',
           `Radar engine: ${EXTREME_RADAR_ENABLED ? 'ON' : 'OFF'}`,
-          `Автосканирование: ${EXTREME_AUTO_SCAN_ENABLED ? 'ON' : 'OFF'}`,
+          `Торговое автосканирование: ${EXTREME_AUTO_SCAN_ENABLED ? 'ON' : 'OFF'}`,
+          `Wide diagnostics auto: ${EXTREME_WIDE_SCAN_ENABLED ? 'ON' : 'OFF'}` +
+            ` | ${Math.round(EXTREME_WIDE_SCAN_INTERVAL_MS / 60000)} мин`,
           `Paper-сигналы: ${EXTREME_PAPER_SIGNALS_ENABLED ? 'ON' : 'OFF'}`,
           'Live-сделки: OFF',
           '',
+          'Запустить широкий диагностический срез: /extreme scan',
           `Проверить базовую пару: /extreme debug`,
           'Проверить монету: /extreme debug DEXEUSDT',
         ].join('\n')
       );
     }
 
+    if (mode === 'scan') {
+      await this._sendPlain(
+        userId,
+        '⚡ Extreme Radar проверяет широкий рынок. Сигналы и события не создаются...'
+      );
+
+      const scan = await ExtremeWideRadar.scan(this.provider);
+      scan.diagnosticSaved = false;
+
+      try {
+        await this.db.createResearchScanDiagnostic(
+          ExtremeWideRadar.toDiagnostic(scan)
+        );
+        scan.diagnosticSaved = true;
+      } catch (error) {
+        console.error(
+          '❌ Extreme manual diagnostic write failed:',
+          error?.message || error
+        );
+      }
+
+      return this._sendPlain(
+        userId,
+        ExtremeWideFormatter.format(scan)
+      );
+    }
+
     if (mode !== 'debug') {
       return this._sendPlain(
         userId,
-        '❌ Используй /extreme или /extreme debug DEXEUSDT'
+        '❌ Используй /extreme, /extreme scan или /extreme debug DEXEUSDT'
       );
     }
 
@@ -1653,6 +1687,7 @@ ${insights}`
 /candidates — Candidate Engine сейчас
 /pump — PumpHunter сейчас
 /extreme — статус Extreme Radar
+/extreme scan — широкий диагностический срез без сигналов
 /extreme debug DEXEUSDT — аудит рыночных данных
 /signals 7 — результаты текущего эксперимента
 /research — готовность новых выборок
