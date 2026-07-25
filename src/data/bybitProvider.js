@@ -30,6 +30,7 @@ const COINGECKO_RETRY_DELAY_MS = 30000;
 const COINGECKO_MAX_RETRIES = 2;
 const BINANCE_FUTURES_BASE = 'https://fapi.binance.com';
 const OKX_PUBLIC_BASE = 'https://www.okx.com';
+const GATE_FUTURES_BASE = 'https://api.gateio.ws/api/v4/futures/usdt';
 const EXTREME_AUDIT_DEFAULT_TIMEOUT_MS = 6000;
 
 class BybitDataProvider {
@@ -539,37 +540,61 @@ class BybitDataProvider {
 
   async auditBybitExtremeData(pair, options = {}) {
     const timeoutMs = options.timeoutMs || EXTREME_AUDIT_DEFAULT_TIMEOUT_MS;
-    const probes = await Promise.all([
-      this._probeBybitRest('ticker', '/v5/market/tickers', {
-        category: 'linear',
-        symbol: pair,
-      }, timeoutMs),
-      this._probeBybitRest('candles', '/v5/market/kline', {
-        category: 'linear',
-        symbol: pair,
-        interval: '5',
-        limit: 3,
-      }, timeoutMs),
-      this._probeBybitRest('funding', '/v5/market/funding/history', {
-        category: 'linear',
-        symbol: pair,
-        limit: 3,
-      }, timeoutMs),
-      this._probeBybitRest('openInterest', '/v5/market/open-interest', {
-        category: 'linear',
-        symbol: pair,
-        intervalTime: '5min',
-        limit: 3,
-      }, timeoutMs),
-      this._probeBybitRest('orderbook', '/v5/market/orderbook', {
-        category: 'linear',
-        symbol: pair,
-        limit: 25,
-      }, timeoutMs),
-      this._probeBybitLiquidationStream(pair, timeoutMs),
+    const [restProbes, websocketProbes] = await Promise.all([
+      Promise.all([
+        this._probeBybitRest('ticker', '/v5/market/tickers', {
+          category: 'linear',
+          symbol: pair,
+        }, timeoutMs),
+        this._probeBybitRest('candles', '/v5/market/kline', {
+          category: 'linear',
+          symbol: pair,
+          interval: '5',
+          limit: 3,
+        }, timeoutMs),
+        this._probeBybitRest('funding', '/v5/market/funding/history', {
+          category: 'linear',
+          symbol: pair,
+          limit: 3,
+        }, timeoutMs),
+        this._probeBybitRest('openInterest', '/v5/market/open-interest', {
+          category: 'linear',
+          symbol: pair,
+          intervalTime: '5min',
+          limit: 3,
+        }, timeoutMs),
+        this._probeBybitRest('orderbook', '/v5/market/orderbook', {
+          category: 'linear',
+          symbol: pair,
+          limit: 25,
+        }, timeoutMs),
+      ]),
+      this._probeBybitExtremeStream(pair, timeoutMs),
     ]);
+    const restByCapability = Object.fromEntries(
+      restProbes.map((probe) => [probe.capability, probe])
+    );
+    const merged = {};
 
-    return Object.fromEntries(probes.map((probe) => [probe.capability, probe]));
+    for (const capability of [
+      'ticker',
+      'candles',
+      'funding',
+      'openInterest',
+      'orderbook',
+      'liquidations',
+    ]) {
+      const rest = restByCapability[capability];
+      const websocket = websocketProbes[capability];
+      merged[capability] = rest?.available ? rest : websocket?.available ? websocket : rest || websocket;
+    }
+
+    merged._meta = {
+      restAvailable: restProbes.filter((probe) => probe.available).length,
+      websocketAvailable: Object.values(websocketProbes)
+        .filter((probe) => probe.available).length,
+    };
+    return merged;
   }
 
   async auditOkxExtremeData(pair, options = {}) {
@@ -604,6 +629,37 @@ class BybitDataProvider {
     ]);
 
     return Object.fromEntries(probes.map((probe) => [probe.capability, probe]));
+  }
+
+  async auditGateExtremeData(pair, options = {}) {
+    const timeoutMs = options.timeoutMs || EXTREME_AUDIT_DEFAULT_TIMEOUT_MS;
+    const contract = this._symbolToGateContract(pair);
+    const [ticker, candles, contractProbe, orderbook, liquidations] = await Promise.all([
+      this._probeGateRest('ticker', '/tickers', { contract }, timeoutMs),
+      this._probeGateRest('candles', '/candlesticks', {
+        contract,
+        interval: '5m',
+        limit: 3,
+      }, timeoutMs),
+      this._probeGateContract(contract, timeoutMs),
+      this._probeGateRest('orderbook', '/order_book', {
+        contract,
+        limit: 25,
+      }, timeoutMs),
+      this._probeGateRest('liquidations', '/liq_orders', {
+        contract,
+        limit: 20,
+      }, timeoutMs, { emptyIsAvailable: true }),
+    ]);
+
+    return {
+      ticker,
+      candles,
+      funding: contractProbe.funding,
+      openInterest: contractProbe.openInterest,
+      orderbook,
+      liquidations,
+    };
   }
 
   async _probeBybitRest(capability, path, params, timeoutMs) {
@@ -676,6 +732,102 @@ class BybitDataProvider {
     }
   }
 
+  async _probeGateRest(capability, path, params, timeoutMs, options = {}) {
+    const startedAt = Date.now();
+
+    try {
+      const response = await axios.get(`${GATE_FUTURES_BASE}${path}`, {
+        params,
+        timeout: timeoutMs,
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+      const records = this._countGateRecords(capability, response.data);
+      const available = records > 0 || options.emptyIsAvailable === true;
+
+      return this._buildAuditProbe({
+        capability,
+        available,
+        source: 'GATE',
+        records,
+        latencyMs: Date.now() - startedAt,
+        error: available ? null : 'empty response',
+        note: available && records === 0 ? 'endpoint available; no recent events' : null,
+      });
+    } catch (error) {
+      return this._buildAuditProbe({
+        capability,
+        available: false,
+        source: 'GATE',
+        records: 0,
+        latencyMs: Date.now() - startedAt,
+        error: this._formatAuditError(error),
+      });
+    }
+  }
+
+  async _probeGateContract(contract, timeoutMs) {
+    const startedAt = Date.now();
+
+    try {
+      const response = await axios.get(`${GATE_FUTURES_BASE}/contracts/${contract}`, {
+        timeout: timeoutMs,
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+      const payload = response.data || {};
+      const latencyMs = Date.now() - startedAt;
+      const hasFunding = payload.funding_rate != null &&
+        payload.funding_rate !== '' &&
+        Number.isFinite(Number(payload.funding_rate));
+      const hasOpenInterest = payload.position_size != null &&
+        payload.position_size !== '' &&
+        Number.isFinite(Number(payload.position_size));
+
+      return {
+        funding: this._buildAuditProbe({
+          capability: 'funding',
+          available: hasFunding,
+          source: 'GATE',
+          records: hasFunding ? 1 : 0,
+          latencyMs,
+          error: hasFunding ? null : 'funding_rate missing',
+        }),
+        openInterest: this._buildAuditProbe({
+          capability: 'openInterest',
+          available: hasOpenInterest,
+          source: 'GATE',
+          records: hasOpenInterest ? 1 : 0,
+          latencyMs,
+          error: hasOpenInterest ? null : 'position_size missing',
+        }),
+      };
+    } catch (error) {
+      const probeError = this._formatAuditError(error);
+      const latencyMs = Date.now() - startedAt;
+      return {
+        funding: this._buildAuditProbe({
+          capability: 'funding',
+          available: false,
+          source: 'GATE',
+          records: 0,
+          latencyMs,
+          error: probeError,
+        }),
+        openInterest: this._buildAuditProbe({
+          capability: 'openInterest',
+          available: false,
+          source: 'GATE',
+          records: 0,
+          latencyMs,
+          error: probeError,
+        }),
+      };
+    }
+  }
+
   async _requestBybitAudit(path, params, timeoutMs) {
     const attempts = [];
 
@@ -712,14 +864,33 @@ class BybitDataProvider {
     throw new Error(`all routes failed (${attempts.join(', ')})`);
   }
 
-  _probeBybitLiquidationStream(pair, timeoutMs) {
+  _probeBybitExtremeStream(pair, timeoutMs) {
     const startedAt = Date.now();
+    const capabilities = [
+      'ticker',
+      'candles',
+      'funding',
+      'openInterest',
+      'orderbook',
+      'liquidations',
+    ];
 
     return new Promise((resolve) => {
       let settled = false;
       let ws = null;
+      const probes = Object.fromEntries(capabilities.map((capability) => [
+        capability,
+        this._buildAuditProbe({
+          capability,
+          available: false,
+          source: 'BYBIT_WS',
+          records: 0,
+          latencyMs: 0,
+          error: 'no websocket data received',
+        }),
+      ]));
 
-      const finish = (result) => {
+      const finish = () => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
@@ -727,20 +898,33 @@ class BybitDataProvider {
           ws.removeAllListeners();
           ws.terminate();
         }
-        resolve(this._buildAuditProbe({
-          capability: 'liquidations',
+        const latencyMs = Date.now() - startedAt;
+        Object.values(probes).forEach((probe) => {
+          if (!probe.latencyMs) probe.latencyMs = latencyMs;
+        });
+        resolve(probes);
+      };
+
+      const markAvailable = (capability, records, note = null) => {
+        probes[capability] = this._buildAuditProbe({
+          capability,
+          available: true,
+          source: 'BYBIT_WS',
+          records,
           latencyMs: Date.now() - startedAt,
-          ...result,
-        }));
+          error: null,
+          note,
+        });
+      };
+
+      const maybeFinish = () => {
+        if (capabilities.every((capability) => probes[capability].available)) {
+          finish();
+        }
       };
 
       const timer = setTimeout(() => {
-        finish({
-          available: false,
-          source: 'BYBIT_WS',
-          records: 0,
-          error: 'subscription acknowledgement timeout',
-        });
+        finish();
       }, timeoutMs);
 
       try {
@@ -748,7 +932,12 @@ class BybitDataProvider {
         ws.on('open', () => {
           ws.send(JSON.stringify({
             op: 'subscribe',
-            args: [`allLiquidation.${pair}`],
+            args: [
+              `tickers.${pair}`,
+              `kline.5.${pair}`,
+              `orderbook.50.${pair}`,
+              `allLiquidation.${pair}`,
+            ],
           }));
         });
         ws.on('message', (data) => {
@@ -756,63 +945,95 @@ class BybitDataProvider {
             const message = JSON.parse(data.toString());
             if (message.op === 'subscribe') {
               if (message.success) {
-                finish({
-                  available: true,
-                  source: 'BYBIT_WS',
-                  records: 0,
-                  error: null,
-                  note: 'subscription available; no event required',
-                });
+                markAvailable(
+                  'liquidations',
+                  0,
+                  'subscription available; no event required'
+                );
+                maybeFinish();
               } else {
-                finish({
-                  available: false,
-                  source: 'BYBIT_WS',
-                  records: 0,
-                  error: message.ret_msg || 'subscription rejected',
+                capabilities.forEach((capability) => {
+                  probes[capability].error = message.ret_msg || 'subscription rejected';
                 });
+                finish();
               }
+            } else if (message.topic === `tickers.${pair}`) {
+              const ticker = message.data || {};
+              markAvailable('ticker', 1);
+              if (ticker.fundingRate != null && ticker.fundingRate !== '') {
+                markAvailable('funding', 1);
+              }
+              if (ticker.openInterest != null && ticker.openInterest !== '') {
+                markAvailable('openInterest', 1);
+              }
+              maybeFinish();
+            } else if (message.topic === `kline.5.${pair}`) {
+              markAvailable('candles', Array.isArray(message.data) ? message.data.length : 0);
+              maybeFinish();
+            } else if (message.topic === `orderbook.50.${pair}`) {
+              const book = message.data || {};
+              markAvailable(
+                'orderbook',
+                (Array.isArray(book.b) ? book.b.length : 0) +
+                  (Array.isArray(book.a) ? book.a.length : 0)
+              );
+              maybeFinish();
             } else if (message.topic === `allLiquidation.${pair}`) {
-              finish({
-                available: true,
-                source: 'BYBIT_WS',
-                records: Array.isArray(message.data) ? message.data.length : 0,
-                error: null,
-              });
+              markAvailable(
+                'liquidations',
+                Array.isArray(message.data) ? message.data.length : 0
+              );
+              maybeFinish();
             }
           } catch (error) {
-            finish({
-              available: false,
-              source: 'BYBIT_WS',
-              records: 0,
-              error: `invalid websocket JSON: ${error.message}`,
-            });
+            capabilities
+              .filter((capability) => !probes[capability].available)
+              .forEach((capability) => {
+                probes[capability].error = `invalid websocket JSON: ${error.message}`;
+              });
+            finish();
           }
         });
         ws.on('error', (error) => {
-          finish({
-            available: false,
-            source: 'BYBIT_WS',
-            records: 0,
-            error: error.message,
-          });
+          capabilities
+            .filter((capability) => !probes[capability].available)
+            .forEach((capability) => {
+              probes[capability].error = error.message;
+            });
+          finish();
         });
         ws.on('close', () => {
-          finish({
-            available: false,
-            source: 'BYBIT_WS',
-            records: 0,
-            error: 'connection closed before acknowledgement',
-          });
+          capabilities
+            .filter((capability) => !probes[capability].available)
+            .forEach((capability) => {
+              probes[capability].error = 'connection closed before data arrived';
+            });
+          finish();
         });
       } catch (error) {
-        finish({
-          available: false,
-          source: 'BYBIT_WS',
-          records: 0,
-          error: error.message,
+        capabilities.forEach((capability) => {
+          probes[capability].error = error.message;
         });
+        finish();
       }
     });
+  }
+
+  _countGateRecords(capability, payload) {
+    if (capability === 'orderbook') {
+      return (payload?.bids || []).length + (payload?.asks || []).length;
+    }
+
+    if (capability === 'ticker' || capability === 'candles' || capability === 'liquidations') {
+      return Array.isArray(payload) ? payload.length : 0;
+    }
+
+    return payload ? 1 : 0;
+  }
+
+  _symbolToGateContract(symbol) {
+    const base = String(symbol || '').replace(/USDT$/, '');
+    return `${base}_USDT`;
   }
 
   _countBybitRecords(capability, payload) {

@@ -29,6 +29,14 @@ const provider = {
     orderbook: probe('orderbook', true, 'OKX', 50),
     liquidations: probe('liquidations', true, 'OKX', 0),
   }),
+  auditGateExtremeData: async () => ({
+    ticker: probe('ticker', true, 'GATE'),
+    candles: probe('candles', true, 'GATE', 3),
+    funding: probe('funding', true, 'GATE'),
+    openInterest: probe('openInterest', true, 'GATE'),
+    orderbook: probe('orderbook', true, 'GATE', 50),
+    liquidations: probe('liquidations', true, 'GATE', 20),
+  }),
 };
 
 Promise.resolve()
@@ -41,14 +49,19 @@ Promise.resolve()
         pass: report.pair === 'DEXEUSDT',
       },
       {
-        name: 'Bybit remains primary where available',
-        pass: report.effective.ticker.source === 'BYBIT_PROXY' &&
-          report.effective.orderbook.source === 'BYBIT_PROXY',
+        name: 'A complete venue is preferred over mixing partial Bybit data',
+        pass: report.primaryVenue === 'OKX' &&
+          report.effective.ticker.source === 'OKX' &&
+          report.effective.orderbook.source === 'OKX',
       },
       {
-        name: 'OKX fills missing derivatives capabilities',
+        name: 'Funding and OI stay on the selected primary venue',
         pass: report.effective.funding.source === 'OKX' &&
           report.effective.openInterest.source === 'OKX',
+      },
+      {
+        name: 'A complete primary venue reports source integrity',
+        pass: report.singleVenueComplete && report.mixedVenues === false,
       },
       {
         name: 'Empty liquidation event list does not mean unavailable feed',
@@ -63,7 +76,8 @@ Promise.resolve()
         name: 'Telegram report explicitly keeps all trading actions off',
         pass: formatted.includes('Сигналы: OFF') &&
           formatted.includes('Автосканирование: OFF') &&
-          formatted.includes('Paper-записи: OFF'),
+          formatted.includes('Paper-записи: OFF') &&
+          formatted.includes('Gate fallback: 6/6'),
       },
     ];
 

@@ -21,15 +21,20 @@ class ExtremeAuditFormatter {
       `Пара: ${report.pair}`,
       `Готовность: ${report.availableCount}/${report.totalCapabilities}`,
       `Статус: ${report.readyForResearch ? 'данных достаточно для research-этапа' : 'данных пока недостаточно'}`,
+      `Основной рынок: ${report.primaryVenue}`,
+      `Единая биржа: ${report.singleVenueComplete && !report.mixedVenues ? 'YES' : 'NO'}`,
       `Время проверки: ${(report.durationMs / 1000).toFixed(1)} сек`,
       '',
       'Эффективные источники:',
       ...effectiveRows,
       '',
-      `Bybit: ${this._countAvailable(report.bybit)}/6`,
+      `Bybit: ${this._countAvailable(report.bybit)}/6` +
+        this._formatBybitTransports(report.bybit),
       ...this._formatFailures(report.bybit),
       `OKX fallback: ${this._countAvailable(report.okx)}/6`,
       ...this._formatFailures(report.okx),
+      `Gate fallback: ${this._countAvailable(report.gate)}/6`,
+      ...this._formatFailures(report.gate),
       '',
       unavailable.length
         ? `Недоступно: ${unavailable.join(', ')}`
@@ -53,11 +58,14 @@ class ExtremeAuditFormatter {
   }
 
   static _countAvailable(probes = {}) {
-    return Object.values(probes).filter((probe) => probe.available).length;
+    return Object.values(probes)
+      .filter((probe) => probe?.capability)
+      .filter((probe) => probe.available).length;
   }
 
   static _formatFailures(probes = {}) {
     const failures = Object.values(probes)
+      .filter((probe) => probe?.capability)
       .filter((probe) => !probe.available)
       .slice(0, 3)
       .map((probe) => {
@@ -66,6 +74,13 @@ class ExtremeAuditFormatter {
       });
 
     return failures.length ? failures : ['  · ошибок нет'];
+  }
+
+  static _formatBybitTransports(probes = {}) {
+    const meta = probes._meta;
+    if (!meta) return '';
+
+    return ` | REST ${meta.restAvailable}/5 | WS ${meta.websocketAvailable}/6`;
   }
 
   static _truncate(value, maxLength = 160) {
