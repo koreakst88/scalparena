@@ -4,6 +4,8 @@ const CANDIDATE_V3_EXPERIMENT_ID = process.env.CANDIDATE_V3_EXPERIMENT_ID ||
   'CANDIDATE_V3_20260720';
 const PUMP_V2_EXPERIMENT_ID = process.env.PUMP_V2_EXPERIMENT_ID ||
   'PUMP_V2_ATR13_20260725';
+const EXTREME_EXPERIMENT_ID = process.env.EXTREME_EXPERIMENT_ID ||
+  'EXTREME_V1_RESEARCH_20260725';
 const LEGACY_PAPER_EXPERIMENT_ID = 'LEGACY_PRE_20260719';
 
 const PAPER_PROJECTS = {
@@ -12,6 +14,7 @@ const PAPER_PROJECTS = {
   CANDIDATE_V3: 'CANDIDATE_V3',
   PUMP: 'PUMP',
   PUMP_V2_SHADOW: 'PUMP_V2_SHADOW',
+  EXTREME: 'EXTREME',
   HYBRID: 'HYBRID',
 };
 
@@ -24,9 +27,18 @@ const PAPER_STRATEGY_VERSIONS = {
   PUMP_HUNTER: 'pump_continuation_v2_dynamic_exits',
   PUMP_STATE_V2_SHADOW: 'pump_state_machine_v2_shadow',
   PUMP_STATE_V2_1_SHADOW: 'pump_state_machine_v2_1_atr13',
+  EXTREME_SQUEEZE_LONG: 'extreme_squeeze_long_v1_research',
+  EXTREME_CASCADE_SHORT: 'extreme_cascade_short_v1_research',
 };
 
 function getPaperProject(signal = {}, source = '') {
+  if (
+    ['EXTREME_SQUEEZE_LONG', 'EXTREME_CASCADE_SHORT'].includes(signal.strategy) ||
+    source === 'EXTREME_RADAR'
+  ) {
+    return PAPER_PROJECTS.EXTREME;
+  }
+
   if (signal.strategy === 'BREAKOUT_V3_SHADOW' || source === 'CANDIDATE_V3') {
     return PAPER_PROJECTS.CANDIDATE_V3;
   }
@@ -61,6 +73,7 @@ module.exports = {
   CURRENT_PAPER_EXPERIMENT_ID,
   CANDIDATE_V3_EXPERIMENT_ID,
   PUMP_V2_EXPERIMENT_ID,
+  EXTREME_EXPERIMENT_ID,
   LEGACY_PAPER_EXPERIMENT_ID,
   PAPER_PROJECTS,
   PAPER_STRATEGY_VERSIONS,

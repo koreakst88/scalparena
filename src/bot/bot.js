@@ -47,6 +47,11 @@ const {
   PUMP_V2_SHADOW_MAX_PER_CYCLE,
 } = require('../config/pumpHunter');
 const {
+  EXTREME_RADAR_ENABLED,
+  EXTREME_AUTO_SCAN_ENABLED,
+  EXTREME_PAPER_SIGNALS_ENABLED,
+  EXTREME_PROJECT,
+  EXTREME_EXPERIMENT_ID,
   EXTREME_AUDIT_SYMBOL,
   EXTREME_AUDIT_TIMEOUT_MS,
 } = require('../config/extremeRadar');
@@ -792,18 +797,48 @@ ${insights}
     const parts = this._getCommandParts(msg.text);
     const mode = String(parts[1] || 'status').toLowerCase();
 
-    if (mode !== 'debug') {
+    if (mode === 'status') {
+      let storageStatus = 'NOT READY';
+      let activeEvents = 'n/a';
+
+      try {
+        const events = await this.db.getActiveExtremeEvents();
+        storageStatus = 'READY';
+        activeEvents = events.length;
+      } catch (error) {
+        const message = String(error?.message || '');
+        storageStatus = (
+          error?.code === '42P01' ||
+          error?.code === 'PGRST205' ||
+          message.includes('extreme_events')
+        ) ? 'MIGRATION REQUIRED' : 'UNAVAILABLE';
+      }
+
       return this._sendPlain(
         userId,
         [
           '⚡ Extreme Radar',
           '━━━━━━━━━━━━━━━━━━━━',
-          'Сейчас доступен только Шаг 1: аудит источников.',
-          'Сигналы, автосканирование и paper-записи выключены.',
+          `Проект: ${EXTREME_PROJECT}`,
+          `Эксперимент: ${EXTREME_EXPERIMENT_ID}`,
+          `Хранилище extreme_events: ${storageStatus}`,
+          `Активных research-событий: ${activeEvents}`,
+          '',
+          `Radar engine: ${EXTREME_RADAR_ENABLED ? 'ON' : 'OFF'}`,
+          `Автосканирование: ${EXTREME_AUTO_SCAN_ENABLED ? 'ON' : 'OFF'}`,
+          `Paper-сигналы: ${EXTREME_PAPER_SIGNALS_ENABLED ? 'ON' : 'OFF'}`,
+          'Live-сделки: OFF',
           '',
           `Проверить базовую пару: /extreme debug`,
           'Проверить монету: /extreme debug DEXEUSDT',
         ].join('\n')
+      );
+    }
+
+    if (mode !== 'debug') {
+      return this._sendPlain(
+        userId,
+        '❌ Используй /extreme или /extreme debug DEXEUSDT'
       );
     }
 

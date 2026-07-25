@@ -2,6 +2,11 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const RiskManager = require('../engine/riskManager');
+const {
+  EXTREME_PROJECT,
+  EXTREME_EXPERIMENT_ID,
+  EXTREME_EVENT_STATES,
+} = require('../config/extremeRadar');
 
 const TRADE_CONTEXT_FIELDS = [
   'strategy_version',
@@ -234,6 +239,95 @@ class SupabaseClient {
 
     if (error) throw error;
     return data;
+  }
+
+  async createExtremeEvent(eventData) {
+    const payload = {
+      ...eventData,
+      project: EXTREME_PROJECT,
+      experiment_id: eventData.experiment_id || EXTREME_EXPERIMENT_ID,
+    };
+
+    const { data, error } = await this.client
+      .from('extreme_events')
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error?.code === '23505') {
+      console.log(
+        `⚡ Extreme event duplicate skipped: ${payload.pair} ${payload.scenario}`
+      );
+      return null;
+    }
+
+    if (error) throw error;
+    return data;
+  }
+
+  async updateExtremeEvent(eventId, updates) {
+    const { data, error } = await this.client
+      .from('extreme_events')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', eventId)
+      .eq('project', EXTREME_PROJECT)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  }
+
+  async getActiveExtremeEvents(filters = {}) {
+    let query = this.client
+      .from('extreme_events')
+      .select('*')
+      .eq('project', EXTREME_PROJECT)
+      .eq('experiment_id', filters.experimentId || EXTREME_EXPERIMENT_ID)
+      .in('state', [
+        EXTREME_EVENT_STATES.WATCH,
+        EXTREME_EVENT_STATES.ARMED,
+        EXTREME_EVENT_STATES.TRIGGERED,
+      ])
+      .order('updated_at', { ascending: false });
+
+    if (filters.pair) {
+      query = query.eq('pair', String(filters.pair).toUpperCase());
+    }
+
+    if (filters.scenario) {
+      query = query.eq('scenario', filters.scenario);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  }
+
+  async getExtremeEventsSince(since, filters = {}) {
+    const sinceIso = since instanceof Date ? since.toISOString() : since;
+    let query = this.client
+      .from('extreme_events')
+      .select('*')
+      .eq('project', EXTREME_PROJECT)
+      .eq('experiment_id', filters.experimentId || EXTREME_EXPERIMENT_ID)
+      .gte('created_at', sinceIso)
+      .order('created_at', { ascending: false });
+
+    if (filters.state) {
+      query = query.eq('state', filters.state);
+    }
+
+    if (filters.scenario) {
+      query = query.eq('scenario', filters.scenario);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
   }
 
   _isMissingPaperExperimentColumnError(error) {

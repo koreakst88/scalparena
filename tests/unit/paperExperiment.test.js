@@ -2,6 +2,7 @@ const {
   CURRENT_PAPER_EXPERIMENT_ID,
   CANDIDATE_V3_EXPERIMENT_ID,
   PUMP_V2_EXPERIMENT_ID,
+  EXTREME_EXPERIMENT_ID,
   getPaperProject,
   getPaperStrategyVersion,
 } = require('../../src/config/paperExperiment');
@@ -9,6 +10,14 @@ const {
 console.log('Paper Experiment Config Test\n');
 
 const checks = [
+  {
+    name: 'Extreme Radar owns an isolated research cohort',
+    pass: EXTREME_EXPERIMENT_ID === 'EXTREME_V1_RESEARCH_20260725' &&
+      getPaperProject({ strategy: 'EXTREME_SQUEEZE_LONG' }, 'EXTREME_RADAR') ===
+        'EXTREME' &&
+      getPaperStrategyVersion({ strategy: 'EXTREME_SQUEEZE_LONG' }) ===
+        'extreme_squeeze_long_v1_research',
+  },
   {
     name: 'Pump V2.1 starts a clean ATR 1.3 cohort',
     pass: PUMP_V2_EXPERIMENT_ID === 'PUMP_V2_ATR13_20260725' &&
