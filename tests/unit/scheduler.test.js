@@ -4,7 +4,10 @@ const Scheduler = require('../../src/engine/scheduler');
 
 console.log('🧪 Scheduler Test\n');
 
-const mockBot = { _send: async () => {} };
+const mockBot = {
+  _send: async () => {},
+  _isCandidateAutoEnabled: (userId) => String(userId) === 'candidate-on',
+};
 const mockDb = {
   client: {
     from: () => ({
@@ -37,6 +40,10 @@ scheduler._autoScan()
     const status = scheduler.getStatus();
     console.log(`   Crypto market open: ${status.cryptoMarketOpen}`);
     console.log(`   Last scan: ${status.lastScan || 'not yet'}`);
+    const legacyAlertUsers = scheduler._getLegacyAutoScanUsers([
+      { telegram_id: 'candidate-on' },
+      { telegram_id: 'candidate-off' },
+    ]);
 
     console.log('\n🎯 Final checks:');
     const checks = [
@@ -47,6 +54,11 @@ scheduler._autoScan()
       { name: 'msUntilReset < 24h', pass: msUntilReset < 24 * 60 * 60 * 1000 },
       { name: 'getStatus() возвращает объект', pass: typeof status === 'object' },
       { name: '_getToday8am() возвращает дату', pass: scheduler._getToday8am() instanceof Date },
+      {
+        name: 'Legacy auto-scan excludes users already served by Candidate auto',
+        pass: legacyAlertUsers.length === 1 &&
+          legacyAlertUsers[0].telegram_id === 'candidate-off',
+      },
     ];
 
     checks.forEach((check) => console.log(`   ${check.pass ? '✅' : '❌'} ${check.name}`));

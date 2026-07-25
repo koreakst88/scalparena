@@ -134,7 +134,13 @@ class Scheduler {
 
       if (error || !users?.length) return;
 
-      for (const user of users) {
+      const alertUsers = this._getLegacyAutoScanUsers(users);
+      if (!alertUsers.length) {
+        console.log('🔍 Auto-scan alerts suppressed: Candidate auto is enabled for all users');
+        return;
+      }
+
+      for (const user of alertUsers) {
         await this._sendSignalsToUser(user, signals);
       }
     } catch (error) {
@@ -967,6 +973,14 @@ ${paperSignal ? '\n🧪 Paper signal записан для отслеживан�
 
   _normalizePair(pair) {
     return pair?.includes('USDT') ? pair : `${pair}USDT`;
+  }
+
+  _getLegacyAutoScanUsers(users = []) {
+    if (typeof this.bot._isCandidateAutoEnabled !== 'function') return users;
+
+    return users.filter((user) => (
+      !this.bot._isCandidateAutoEnabled(user.telegram_id)
+    ));
   }
 
   _formatSignalListForLogs(signals) {
