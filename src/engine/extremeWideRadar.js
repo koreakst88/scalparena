@@ -146,6 +146,7 @@ class ExtremeWideRadar {
         pair: report.pair,
         score: report.score,
         anomalyType: report.anomalyType,
+        lastPrice: report.lastPrice,
         priceChange24hPercent: report.priceChange24hPercent,
         range24hPercent: report.range24hPercent,
         fundingPercent: report.fundingPercent,

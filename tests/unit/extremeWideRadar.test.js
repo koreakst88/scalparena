@@ -84,6 +84,11 @@ ExtremeWideRadar.scan(provider, {
           diagnostic.market_context.signalsGenerated === 0,
       },
       {
+        name: 'Diagnostic examples preserve the observed market price',
+        pass: diagnostic.examples.find((example) => example.pair === 'DEXEUSDT')
+          ?.lastPrice === 4.4,
+      },
+      {
         name: 'Telegram output states that no states, signals or alerts exist',
         pass: formatted.includes('Состояния WATCH/ARMED: не создаются') &&
           formatted.includes('Extreme events: 0') &&
