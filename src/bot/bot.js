@@ -63,6 +63,7 @@ const {
   PAPER_SIGNAL_TRACKING_ENABLED,
   PAPER_SIGNAL_TTL_MINUTES,
   CANDIDATE_AUTO_SCAN_ENABLED,
+  CANDIDATE_V1_ALERTS_ENABLED,
   CANDIDATE_AUTO_SCAN_INTERVAL_MS,
   CANDIDATE_AUTO_MIN_SCORE,
   CANDIDATE_AUTO_MIN_RR,
@@ -249,7 +250,8 @@ class ScalpArenaBot {
       '🧠 Candidate Engine — рыночные сетапы',
       '🚀 PumpHunter — импульсные монеты',
       '',
-      `Автопоиск: Candidate ${candidateEnabled ? 'ON' : 'OFF'} | Pump ${pumpEnabled ? 'ON' : 'OFF'}`,
+      `Автопоиск: Candidate research ${candidateEnabled ? 'ON' : 'OFF'} | Pump ${pumpEnabled ? 'ON' : 'OFF'}`,
+      `Candidate V1 alerts: ${CANDIDATE_V1_ALERTS_ENABLED ? 'ON' : 'OFF'}`,
       'Live-сделки на Bybit: OFF',
     ].filter(Boolean).join('\n');
 
@@ -270,7 +272,7 @@ class ScalpArenaBot {
         ],
         [
           {
-            text: `Candidate auto: ${candidateEnabled ? 'ON' : 'OFF'}`,
+            text: `Candidate research: ${candidateEnabled ? 'ON' : 'OFF'}`,
             callback_data: 'menu_candidate_auto_toggle',
           },
           {
@@ -532,7 +534,8 @@ ${paperSignal ? '\n🧪 Paper signal записан для отслеживан�
     const text = [
       '⚙️ SCALPARENA STATUS',
       '━━━━━━━━━━━━━━━━━━━━',
-      `Candidate auto: ${this._isCandidateAutoEnabled(userId) ? 'ON' : 'OFF'}`,
+      `Candidate research: ${this._isCandidateAutoEnabled(userId) ? 'ON' : 'OFF'}`,
+      `Candidate V1 alerts: ${CANDIDATE_V1_ALERTS_ENABLED ? 'ON' : 'OFF'}`,
       `Старый Auto-scan: ${this._isCandidateAutoEnabled(userId) ? 'PAUSED (без дублей)' : 'ON'}`,
       `Последний цикл: ${this._formatStatusTime(schedulerStatus.lastCandidateScan)}`,
       '',
@@ -556,7 +559,7 @@ ${paperSignal ? '\n🧪 Paper signal записан для отслеживан�
         inline_keyboard: [
           [
             {
-              text: `Candidate auto: ${this._isCandidateAutoEnabled(userId) ? 'ON' : 'OFF'}`,
+              text: `Candidate research: ${this._isCandidateAutoEnabled(userId) ? 'ON' : 'OFF'}`,
               callback_data: 'menu_candidate_auto_toggle',
             },
             {
@@ -748,12 +751,12 @@ ${insights}
 
     if (action === 'on') {
       this.candidateAutoOverrides.set(userId, true);
-      return this._sendPlain(userId, this._formatCandidateAutoStatus(userId, '✅ Candidate auto включен для текущего runtime.'));
+      return this._sendPlain(userId, this._formatCandidateAutoStatus(userId, '✅ Candidate research включен для текущего runtime.'));
     }
 
     if (action === 'off') {
       this.candidateAutoOverrides.set(userId, false);
-      return this._sendPlain(userId, this._formatCandidateAutoStatus(userId, '⏸️ Candidate auto выключен для текущего runtime.'));
+      return this._sendPlain(userId, this._formatCandidateAutoStatus(userId, '⏸️ Candidate research выключен для текущего runtime.'));
     }
 
     if (action !== 'status') {
@@ -1550,16 +1553,17 @@ ${insights}`
 
     return [
       prefix,
-      '🧠 Candidate auto status',
+      '🧠 Candidate research status',
       '━━━━━━━━━━━━━━━━━━━━',
       `Статус: ${enabled ? 'ON' : 'OFF'} (${override})`,
       `Интервал: ${Math.round(CANDIDATE_AUTO_SCAN_INTERVAL_MS / 60000)} мин`,
-      `Фильтр: score >= ${CANDIDATE_AUTO_MIN_SCORE}, RR >= ${CANDIDATE_AUTO_MIN_RR}`,
-      `Cooldown по паре: ${CANDIDATE_AUTO_COOLDOWN_MINUTES} мин`,
-      `Макс алертов за цикл: ${CANDIDATE_AUTO_MAX_ALERTS}`,
+      `Candidate V1 alerts: ${CANDIDATE_V1_ALERTS_ENABLED ? 'ON' : 'OFF'}`,
+      `V1 фильтр: score >= ${CANDIDATE_AUTO_MIN_SCORE}, RR >= ${CANDIDATE_AUTO_MIN_RR}`,
+      `V1 cooldown по паре: ${CANDIDATE_AUTO_COOLDOWN_MINUTES} мин`,
+      `V1 макс алертов за цикл: ${CANDIDATE_AUTO_MAX_ALERTS}`,
       `Candidate V3: ${CANDIDATE_V3_ENABLED ? 'ON' : 'OFF'} | max ${CANDIDATE_V3_MAX_PER_CYCLE} запись | alerts OFF`,
       'Candidate V2: ARCHIVE, новые записи отключены',
-      `Старый Auto-scan: ${enabled ? 'PAUSED, чтобы не дублировать Candidate auto' : 'ON'}`,
+      `Старый Auto-scan: ${enabled ? 'PAUSED, чтобы не дублировать Candidate research' : 'ON'}`,
       'Live Bybit orders: OFF',
       '',
       'Постоянно включить после redeploy: CANDIDATE_AUTO_SCAN_ENABLED=true в Railway Variables.',
@@ -1746,7 +1750,7 @@ Live-сделки на Bybit отключены. Бот собирает и пр
       this.candidateAutoOverrides.set(userId, enabled);
       return this._sendMainMenu(
         userId,
-        `${enabled ? '✅' : '⏸️'} Candidate auto ${enabled ? 'включен' : 'выключен'} до следующего redeploy.`
+        `${enabled ? '✅' : '⏸️'} Candidate research ${enabled ? 'включен' : 'выключен'} до следующего redeploy.`
       );
     }
 

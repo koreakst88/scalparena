@@ -12,6 +12,7 @@ const {
   PAPER_SIGNAL_TRACKING_ENABLED,
   PAPER_SIGNAL_ALERTS_ENABLED,
   PAPER_SIGNAL_AUTO_LOG_ENABLED,
+  CANDIDATE_V1_ALERTS_ENABLED,
   CANDIDATE_AUTO_SCAN_INTERVAL_MS,
   CANDIDATE_AUTO_MIN_SCORE,
   CANDIDATE_AUTO_MIN_RR,
@@ -99,8 +100,9 @@ class Scheduler {
 
     console.log('✅ Auto-scan every 15 min | Daily reset at 08:00 Seoul');
     console.log(
-      `🧠 Candidate auto-scan every ${Math.round(CANDIDATE_AUTO_SCAN_INTERVAL_MS / 60000)} min ` +
-      `| score>=${CANDIDATE_AUTO_MIN_SCORE} RR>=${CANDIDATE_AUTO_MIN_RR}`
+      `🧠 Candidate research every ${Math.round(CANDIDATE_AUTO_SCAN_INTERVAL_MS / 60000)} min ` +
+      `| V1 alerts=${CANDIDATE_V1_ALERTS_ENABLED ? 'ON' : 'OFF'} ` +
+      `| V3=${CANDIDATE_V3_ENABLED ? 'ON' : 'OFF'}`
     );
     console.log(
       `🚀 Pump auto-scan every ${Math.round(PUMP_AUTO_SCAN_INTERVAL_MS / 60000)} min ` +
@@ -175,7 +177,7 @@ class Scheduler {
   }
 
   async _candidateAutoScan() {
-    console.log('🧠 Candidate auto-scan triggered...');
+    console.log('🧠 Candidate research cycle triggered...');
     this.lastCandidateScanTime = new Date();
 
     try {
@@ -192,12 +194,18 @@ class Scheduler {
       ));
 
       if (!enabledUsers.length) {
-        console.log('🧠 Candidate auto-scan: disabled for all users');
+        console.log('🧠 Candidate research: disabled for all users');
+        return;
+      }
+
+      await this._recordCandidateV3(enabledUsers);
+
+      if (!CANDIDATE_V1_ALERTS_ENABLED) {
+        console.log('🧠 Candidate V1 alerts: OFF | V3 diagnostics continue');
         return;
       }
 
       const reports = CandidateEngine.scanAll(this.provider);
-      await this._recordCandidateV3(enabledUsers);
       const candidates = this._getStrictCandidateAlerts(reports);
 
       if (!candidates.length) {

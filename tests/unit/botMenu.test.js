@@ -34,7 +34,7 @@ const checks = [
   },
   {
     name: 'Runtime auto states are reflected in button labels',
-    pass: keyboard.flat().some((button) => button.text === 'Candidate auto: ON') &&
+    pass: keyboard.flat().some((button) => button.text === 'Candidate research: ON') &&
       keyboard.flat().some((button) => button.text === 'Pump auto: OFF'),
   },
 ];
