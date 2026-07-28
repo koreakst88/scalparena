@@ -56,6 +56,7 @@ const {
   EXTREME_EXPERIMENT_ID,
   EXTREME_WIDE_SCAN_ENABLED,
   EXTREME_WIDE_SCAN_INTERVAL_MS,
+  EXTREME_EVENT_TRACKING_ENABLED,
   EXTREME_AUDIT_SYMBOL,
   EXTREME_AUDIT_TIMEOUT_MS,
 } = require('../config/extremeRadar');
@@ -807,11 +808,21 @@ ${insights}
     if (mode === 'status') {
       let storageStatus = 'NOT READY';
       let activeEvents = 'n/a';
+      let eventStates = 'n/a';
 
       try {
         const events = await this.db.getActiveExtremeEvents();
         storageStatus = 'READY';
         activeEvents = events.length;
+        const stateCounts = events.reduce((counts, event) => {
+          counts[event.state] = (counts[event.state] || 0) + 1;
+          return counts;
+        }, {});
+        eventStates = [
+          `WATCH ${stateCounts.WATCH || 0}`,
+          `ARMED ${stateCounts.ARMED || 0}`,
+          `TRIGGERED ${stateCounts.TRIGGERED || 0}`,
+        ].join(' | ');
       } catch (error) {
         const message = String(error?.message || '');
         storageStatus = (
@@ -830,11 +841,13 @@ ${insights}
           `Эксперимент: ${EXTREME_EXPERIMENT_ID}`,
           `Хранилище extreme_events: ${storageStatus}`,
           `Активных research-событий: ${activeEvents}`,
+          `Состояния: ${eventStates}`,
           '',
           `Radar engine: ${EXTREME_RADAR_ENABLED ? 'ON' : 'OFF'}`,
           `Торговое автосканирование: ${EXTREME_AUTO_SCAN_ENABLED ? 'ON' : 'OFF'}`,
           `Wide diagnostics auto: ${EXTREME_WIDE_SCAN_ENABLED ? 'ON' : 'OFF'}` +
             ` | ${Math.round(EXTREME_WIDE_SCAN_INTERVAL_MS / 60000)} мин`,
+          `Event lifecycle: ${EXTREME_EVENT_TRACKING_ENABLED ? 'ON (research only)' : 'OFF'}`,
           `Paper-сигналы: ${EXTREME_PAPER_SIGNALS_ENABLED ? 'ON' : 'OFF'}`,
           'Live-сделки: OFF',
           '',

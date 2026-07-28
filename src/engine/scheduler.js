@@ -6,6 +6,7 @@ const CandidateBreakoutV3 = require('./candidateBreakoutV3');
 const PumpHunterEngine = require('./pumpHunterEngine');
 const PumpStateMachineV2 = require('./pumpStateMachineV2');
 const ExtremeWideRadar = require('./extremeWideRadar');
+const ExtremeEventTracker = require('./extremeEventTracker');
 const MarketContextV1 = require('./marketContextV1');
 const RiskManager = require('./riskManager');
 const {
@@ -44,6 +45,7 @@ const { MARKET_CONTEXT_V1_ENABLED } = require('../config/marketContext');
 const {
   EXTREME_WIDE_SCAN_ENABLED,
   EXTREME_WIDE_SCAN_INTERVAL_MS,
+  EXTREME_EVENT_TRACKING_ENABLED,
 } = require('../config/extremeRadar');
 
 const SCAN_INTERVAL_MS = 15 * 60 * 1000;
@@ -67,6 +69,8 @@ class Scheduler {
     this.pumpAlertCooldowns = new Map();
     this.candidateDiagnosticsUnavailable = false;
     this.extremeDiagnosticsUnavailable = false;
+    this.extremeEventsUnavailable = false;
+    this.extremeEventTracker = new ExtremeEventTracker(db);
   }
 
   start() {
@@ -111,7 +115,7 @@ class Scheduler {
     console.log(
       `⚡ Extreme wide diagnostics: ${EXTREME_WIDE_SCAN_ENABLED ? 'ON' : 'OFF'} ` +
       `| interval ${Math.round(EXTREME_WIDE_SCAN_INTERVAL_MS / 60000)} min ` +
-      '| alerts=OFF events=OFF'
+      `| events=${EXTREME_EVENT_TRACKING_ENABLED ? 'RESEARCH' : 'OFF'} alerts=OFF`
     );
     console.log('⏳ First auto-scan in 5 minutes (WS data accumulation)');
   }
@@ -277,13 +281,35 @@ class Scheduler {
 
     try {
       const scan = await ExtremeWideRadar.scan(this.provider);
+      if (EXTREME_EVENT_TRACKING_ENABLED && !this.extremeEventsUnavailable) {
+        try {
+          scan.eventTracking = await this.extremeEventTracker.processScan(scan);
+          scan.eventsCreated = scan.eventTracking.created;
+        } catch (eventError) {
+          const eventMessage = String(eventError?.message || '');
+          const missingEventsTable = (
+            eventError?.code === '42P01' ||
+            eventError?.code === 'PGRST205' ||
+            eventMessage.includes('extreme_events')
+          );
+          if (missingEventsTable) {
+            this.extremeEventsUnavailable = true;
+            console.warn('⚠️ Extreme event tracking disabled: extreme_events migration is missing');
+          } else {
+            console.error('❌ Extreme event tracking failed:', eventMessage);
+          }
+        }
+      }
       await this.db.createResearchScanDiagnostic(
         ExtremeWideRadar.toDiagnostic(scan)
       );
       console.log(
         `⚡ Extreme wide diagnostics: source=${scan.marketSource} ` +
         `scanned=${scan.scannedPairs} liquid=${scan.eligiblePairs} ` +
-        `anomalies=${scan.anomalyCount} events=0 alerts=0`
+        `anomalies=${scan.anomalyCount} ` +
+        `events+${scan.eventTracking?.created || 0} ` +
+        `armed+${scan.eventTracking?.armed || 0} ` +
+        `triggered+${scan.eventTracking?.triggered || 0} alerts=0`
       );
       return scan;
     } catch (error) {
@@ -1079,6 +1105,7 @@ ${paperSignal ? '\n🧪 Paper signal записан для отслеживан�
       lastPumpScan: this.lastPumpScanTime,
       nextPumpScan: new Date(Date.now() + PUMP_AUTO_SCAN_INTERVAL_MS),
       extremeWideEnabled: EXTREME_WIDE_SCAN_ENABLED,
+      extremeEventTrackingEnabled: EXTREME_EVENT_TRACKING_ENABLED,
       lastExtremeWideScan: this.lastExtremeWideScanTime,
       nextExtremeWideScan: EXTREME_WIDE_SCAN_ENABLED
         ? new Date(Date.now() + EXTREME_WIDE_SCAN_INTERVAL_MS)

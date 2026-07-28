@@ -1,4 +1,5 @@
 process.env.EXTREME_WIDE_SCAN_ENABLED = 'true';
+process.env.EXTREME_EVENT_TRACKING_ENABLED = 'false';
 
 const Scheduler = require('../../src/engine/scheduler');
 

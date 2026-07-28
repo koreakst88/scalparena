@@ -89,8 +89,8 @@ ExtremeWideRadar.scan(provider, {
           ?.lastPrice === 4.4,
       },
       {
-        name: 'Telegram output states that no states, signals or alerts exist',
-        pass: formatted.includes('Состояния WATCH/ARMED: не создаются') &&
+        name: 'Telegram output states that manual scan creates no states, signals or alerts',
+        pass: formatted.includes('Ручной scan не создаёт WATCH/ARMED события') &&
           formatted.includes('Extreme events: 0') &&
           formatted.includes('Paper-сигналы: 0') &&
           formatted.includes('Telegram-алерты: OFF'),

@@ -136,11 +136,14 @@ class ExtremeWideRadar {
       rejection_counts: scan.rejectionCounts,
       context_rejection_counts: {},
       market_context: {
-        mode: 'WIDE_DIAGNOSTIC_ONLY',
+        mode: scan.eventTracking?.enabled
+          ? 'WIDE_RESEARCH_LIFECYCLE'
+          : 'WIDE_DIAGNOSTIC_ONLY',
         minTurnoverUsd: scan.minTurnoverUsd,
         anomalyScore: scan.anomalyScore,
         signalsGenerated: 0,
-        eventsCreated: 0,
+        eventTracking: scan.eventTracking || null,
+        eventsCreated: scan.eventsCreated || 0,
       },
       examples: scan.reports.slice(0, exampleLimit).map((report) => ({
         pair: report.pair,

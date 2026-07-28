@@ -56,6 +56,34 @@ module.exports = {
     process.env.EXTREME_WIDE_EXAMPLE_LIMIT,
     10
   ),
+  EXTREME_EVENT_TRACKING_ENABLED: parseBoolean(
+    process.env.EXTREME_EVENT_TRACKING_ENABLED,
+    true
+  ),
+  EXTREME_EVENT_ARM_SCORE: parsePositiveInt(
+    process.env.EXTREME_EVENT_ARM_SCORE,
+    55
+  ),
+  EXTREME_EVENT_ARM_OBSERVATIONS: parsePositiveInt(
+    process.env.EXTREME_EVENT_ARM_OBSERVATIONS,
+    3
+  ),
+  EXTREME_EVENT_TRIGGER_MOVE_PERCENT: parsePositiveInt(
+    process.env.EXTREME_EVENT_TRIGGER_MOVE_PERCENT,
+    2
+  ),
+  EXTREME_EVENT_STALE_MINUTES: parsePositiveInt(
+    process.env.EXTREME_EVENT_STALE_MINUTES,
+    15
+  ),
+  EXTREME_EVENT_MAX_HOURS: parsePositiveInt(
+    process.env.EXTREME_EVENT_MAX_HOURS,
+    12
+  ),
+  EXTREME_EVENT_HISTORY_LIMIT: parsePositiveInt(
+    process.env.EXTREME_EVENT_HISTORY_LIMIT,
+    240
+  ),
   EXTREME_AUDIT_SYMBOL: process.env.EXTREME_AUDIT_SYMBOL || 'BTCUSDT',
   EXTREME_AUDIT_TIMEOUT_MS: parsePositiveInt(
     process.env.EXTREME_AUDIT_TIMEOUT_MS,

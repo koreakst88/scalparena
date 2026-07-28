@@ -118,9 +118,11 @@ function createClientRecorder() {
       )),
     },
     {
-      name: 'Extreme status confirms storage while all engines stay off',
+      name: 'Extreme status confirms storage and research-only lifecycle',
       pass: statusMessage.includes('Хранилище extreme_events: READY') &&
         statusMessage.includes('Radar engine: OFF') &&
+        statusMessage.includes('Event lifecycle: ON (research only)') &&
+        statusMessage.includes('Состояния: WATCH 0 | ARMED 0 | TRIGGERED 0') &&
         statusMessage.includes('Paper-сигналы: OFF'),
     },
   ];

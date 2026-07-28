@@ -21,7 +21,7 @@ class ExtremeWideFormatter {
       ...rows,
       '',
       `Диагностический снимок сохранён: ${scan.diagnosticSaved ? 'YES' : 'NO'}`,
-      'Состояния WATCH/ARMED: не создаются',
+      'Ручной scan не создаёт WATCH/ARMED события',
       'Extreme events: 0',
       'Paper-сигналы: 0',
       'Telegram-алерты: OFF',
