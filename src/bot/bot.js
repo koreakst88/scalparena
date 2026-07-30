@@ -10,6 +10,7 @@ const CandidateEngine = require('../engine/candidateEngine');
 const PumpHunterEngine = require('../engine/pumpHunterEngine');
 const ExtremeDataAudit = require('../engine/extremeDataAudit');
 const ExtremeWideRadar = require('../engine/extremeWideRadar');
+const StructureDataAudit = require('../engine/structureDataAudit');
 const RiskManager = require('../engine/riskManager');
 const FeeCalculator = require('../engine/feeCalculator');
 const PositionMonitor = require('../engine/positionMonitor');
@@ -23,6 +24,7 @@ const CandidateFormatter = require('../analytics/candidateFormatter');
 const PumpHunterFormatter = require('../analytics/pumpHunterFormatter');
 const ExtremeAuditFormatter = require('../analytics/extremeAuditFormatter');
 const ExtremeWideFormatter = require('../analytics/extremeWideFormatter');
+const StructureAuditFormatter = require('../analytics/structureAuditFormatter');
 const { formatDetailedAnalytics } = require('../analytics/formatters');
 const { CURRENT_STRATEGY_VERSION, LEGACY_STRATEGY_VERSION } = require('../config/strategy');
 const { MARKET_CONTEXT_V1_ENABLED } = require('../config/marketContext');
@@ -61,6 +63,15 @@ const {
   EXTREME_AUDIT_TIMEOUT_MS,
 } = require('../config/extremeRadar');
 const {
+  STRUCTURE_PROJECT,
+  STRUCTURE_EXPERIMENT_ID,
+  STRUCTURE_LEVEL_ENGINE_ENABLED,
+  STRUCTURE_WIDE_SCAN_ENABLED,
+  STRUCTURE_EVENT_TRACKING_ENABLED,
+  STRUCTURE_PAPER_SIGNALS_ENABLED,
+  STRUCTURE_ALERTS_ENABLED,
+} = require('../config/structure');
+const {
   PAPER_SIGNAL_TRACKING_ENABLED,
   PAPER_SIGNAL_TTL_MINUTES,
   CANDIDATE_PROJECT_ENABLED,
@@ -79,6 +90,7 @@ const BOT_COMMANDS = [
   { command: 'menu', description: 'Главная панель' },
   { command: 'pump', description: 'PumpHunter Lab' },
   { command: 'extreme', description: 'Extreme Radar · аудит данных' },
+  { command: 'structure', description: 'Structure · аудит уровней' },
   { command: 'signals', description: 'Paper результаты' },
   { command: 'research', description: 'Готовность исследования' },
   { command: 'status', description: 'Состояние системы' },
@@ -167,6 +179,7 @@ class ScalpArenaBot {
     this.bot.onText(/\/pump_?auto(?:\s+(\S+))?/, this._safe((msg, match) => this._onPumpAuto(msg, match)));
     this.bot.onText(/\/pump(?:\s+(\S+))?$/, this._safe((msg) => this._onPump(msg)));
     this.bot.onText(/\/extreme(?:@\w+)?(?:\s+.*)?$/, this._safe((msg) => this._onExtreme(msg)));
+    this.bot.onText(/\/structure(?:@\w+)?(?:\s+.*)?$/, this._safe((msg) => this._onStructure(msg)));
     this.bot.onText(/\/signals/, this._safe((msg) => this._onSignals(msg)));
     this.bot.onText(/\/research(?:@\w+)?$/, this._safe((msg) => this._onResearch(msg)));
     this.bot.onText(/\/signal_stats/, this._safe((msg) => this._onSignals(msg)));
@@ -247,6 +260,7 @@ class ScalpArenaBot {
       'Активные исследовательские направления:',
       '🚀 PumpHunter — импульсные монеты',
       '⚡ Extreme Radar — рыночные аномалии',
+      '🏗 Structure — уровни и пробои (data audit)',
       '',
       `Автопоиск PumpHunter: ${pumpEnabled ? 'ON' : 'OFF'}`,
       `Extreme Radar: ${EXTREME_WIDE_SCAN_ENABLED ? 'ON (research)' : 'OFF'}`,
@@ -266,6 +280,9 @@ class ScalpArenaBot {
         [
           { text: '🚀 PumpHunter', callback_data: 'menu_pump' },
           { text: '⚡ Extreme', callback_data: 'menu_extreme' },
+        ],
+        [
+          { text: '🏗 Structure', callback_data: 'menu_structure' },
         ],
         [
           {
@@ -890,6 +907,59 @@ ${insights}
       timeoutMs: EXTREME_AUDIT_TIMEOUT_MS,
     });
     return this._sendPlain(userId, ExtremeAuditFormatter.format(report));
+  }
+
+  async _onStructure(msg) {
+    const userId = String(msg.chat.id);
+    const parts = this._getCommandParts(msg.text);
+    const mode = String(parts[1] || 'status').toLowerCase();
+
+    if (mode === 'status') {
+      return this._sendPlain(
+        userId,
+        [
+          '🏗 Structure Breakout',
+          '━━━━━━━━━━━━━━━━━━━━',
+          `Проект: ${STRUCTURE_PROJECT}`,
+          `Эксперимент: ${STRUCTURE_EXPERIMENT_ID}`,
+          '',
+          'Data Audit: ON (ручная проверка)',
+          `Level Engine: ${STRUCTURE_LEVEL_ENGINE_ENABLED ? 'ON' : 'OFF'}`,
+          `Wide scan: ${STRUCTURE_WIDE_SCAN_ENABLED ? 'ON' : 'OFF'}`,
+          `Events: ${STRUCTURE_EVENT_TRACKING_ENABLED ? 'ON' : 'OFF'}`,
+          `Paper-сигналы: ${STRUCTURE_PAPER_SIGNALS_ENABLED ? 'ON' : 'OFF'}`,
+          `Telegram-алерты: ${STRUCTURE_ALERTS_ENABLED ? 'ON' : 'OFF'}`,
+          'Live-сделки: OFF',
+          '',
+          'Проверить данные: /structure debug BTCUSDT',
+          'Проверить широкую монету: /structure debug DEXEUSDT',
+        ].join('\n')
+      );
+    }
+
+    if (mode !== 'debug') {
+      return this._sendPlain(
+        userId,
+        '❌ Используй /structure или /structure debug DEXEUSDT'
+      );
+    }
+
+    let pair;
+    try {
+      pair = StructureDataAudit.normalizePair(parts[2] || 'BTCUSDT');
+    } catch (_error) {
+      return this._sendPlain(
+        userId,
+        '❌ Неверная пара. Используй формат /structure debug BTCUSDT'
+      );
+    }
+
+    await this._sendPlain(
+      userId,
+      `🏗 Structure проверяет 4H/1H/15m данные ${pair}. Сигналы не запускаются...`
+    );
+    const report = await StructureDataAudit.run(this.provider, pair);
+    return this._sendPlain(userId, StructureAuditFormatter.format(report));
   }
 
   async _sendPumpHunterDebug(userId) {
@@ -1708,6 +1778,8 @@ ${insights}`
 /extreme — статус Extreme Radar
 /extreme scan — широкий диагностический срез без сигналов
 /extreme debug DEXEUSDT — аудит рыночных данных
+/structure — статус Structure Breakout
+/structure debug DEXEUSDT — аудит 4H/1H/15m свечей
 /signals 7 — результаты текущего эксперимента
 /research — готовность новых выборок
 /status — автопоиск, наблюдения и режимы
@@ -1727,6 +1799,7 @@ ${insights}`
 /pump full
 /pump debug
 /extreme debug
+/structure debug DEXEUSDT
 
 Live-сделки на Bybit отключены. Бот собирает и проверяет paper-сигналы.`
     );
@@ -1759,6 +1832,10 @@ Live-сделки на Bybit отключены. Бот собирает и пр
 
     if (data === 'menu_extreme') {
       return this._onExtreme({ chat: { id: userId }, text: '/extreme' });
+    }
+
+    if (data === 'menu_structure') {
+      return this._onStructure({ chat: { id: userId }, text: '/structure' });
     }
 
     if (data === 'menu_candidate_auto_toggle') {

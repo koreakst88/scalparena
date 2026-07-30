@@ -13,16 +13,17 @@ const commands = ScalpArenaBot.BOT_COMMANDS.map((item) => item.command);
 const checks = [
   {
     name: 'Visible Telegram menu contains only primary commands',
-    pass: commands.join(',') === 'menu,pump,extreme,signals,research,status,help',
+    pass: commands.join(',') === 'menu,pump,extreme,structure,signals,research,status,help',
   },
   {
     name: 'Legacy commands stay out of the visible Telegram menu',
     pass: !commands.some((command) => ['scan', 'stats', 'patterns', 'rm', 'exit', 'deposit'].includes(command)),
   },
   {
-    name: 'Main menu exposes Pump and Extreme but not retired Candidate',
+    name: 'Main menu exposes Pump, Extreme and Structure but not retired Candidate',
     pass: callbacks.includes('menu_pump') &&
       callbacks.includes('menu_extreme') &&
+      callbacks.includes('menu_structure') &&
       !callbacks.includes('menu_candidates'),
   },
   {

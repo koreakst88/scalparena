@@ -58,6 +58,7 @@ class BybitDataProvider {
     this.lastSupabaseProxyVersion = null;
     this.lastBinanceMarketError = null;
     this.lastOkxMarketError = null;
+    this.lastGateMarketError = null;
     this.supabaseProxyUrl = process.env.SUPABASE_PROXY_URL;
     this.supabaseProxyKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || '';
 
@@ -577,6 +578,49 @@ class BybitDataProvider {
     } catch (error) {
       console.error(
         '❌ Gate futures tickers request failed:',
+        error.response?.status || error.message
+      );
+      return [];
+    }
+  }
+
+  async getGateFuturesKlines(pair, interval = '15', limit = 200) {
+    this.lastGateMarketError = null;
+
+    try {
+      const response = await axios.get(`${GATE_FUTURES_BASE}/candlesticks`, {
+        params: {
+          contract: this._symbolToGateContract(pair),
+          interval: this._toGateInterval(interval),
+          limit,
+        },
+        timeout: 20000,
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+      const intervalMs = this._intervalMinutes(interval) * 60 * 1000;
+      const currentBucket = Math.floor(Date.now() / intervalMs) * intervalMs;
+
+      return (response.data || [])
+        .map((candle) => {
+          const timestamp = Number(candle.t) * 1000;
+          return {
+            timestamp,
+            open: Number(candle.o),
+            high: Number(candle.h),
+            low: Number(candle.l),
+            close: Number(candle.c),
+            volume: Number(candle.v),
+            turnover: Number(candle.sum || 0),
+            confirm: timestamp < currentBucket,
+          };
+        })
+        .sort((a, b) => a.timestamp - b.timestamp);
+    } catch (error) {
+      this.lastGateMarketError = this._formatAxiosError(error);
+      console.error(
+        `❌ Gate futures klines request failed for ${pair}:`,
         error.response?.status || error.message
       );
       return [];
@@ -1278,6 +1322,34 @@ class BybitDataProvider {
     };
 
     return map[value] || '15m';
+  }
+
+  _toGateInterval(interval) {
+    const value = String(interval);
+    if (value.endsWith('m') || value.endsWith('h') || value.endsWith('d')) {
+      return value.toLowerCase();
+    }
+
+    const map = {
+      1: '1m',
+      5: '5m',
+      15: '15m',
+      30: '30m',
+      60: '1h',
+      240: '4h',
+      D: '1d',
+    };
+
+    return map[value] || '15m';
+  }
+
+  _intervalMinutes(interval) {
+    const value = String(interval);
+    if (/^\d+m$/i.test(value)) return Number.parseInt(value, 10);
+    if (/^\d+h$/i.test(value)) return Number.parseInt(value, 10) * 60;
+    if (/^\d+d$/i.test(value)) return Number.parseInt(value, 10) * 1440;
+    if (value === 'D') return 1440;
+    return Number.parseInt(value, 10) || 15;
   }
 
   _okxInstIdToSymbol(instId) {
