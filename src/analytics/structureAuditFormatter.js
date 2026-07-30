@@ -22,7 +22,7 @@ class StructureAuditFormatter {
       `Время проверки: ${(report.durationMs / 1000).toFixed(1)} сек`,
       ...venueRows,
       '',
-      'Level Engine: OFF',
+      'Level Engine: не запускался этой командой',
       'Wide scan: OFF',
       'Events: OFF',
       'Paper-сигналы: OFF',

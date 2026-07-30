@@ -11,6 +11,7 @@ const PumpHunterEngine = require('../engine/pumpHunterEngine');
 const ExtremeDataAudit = require('../engine/extremeDataAudit');
 const ExtremeWideRadar = require('../engine/extremeWideRadar');
 const StructureDataAudit = require('../engine/structureDataAudit');
+const StructureLevelEngine = require('../engine/structureLevelEngine');
 const RiskManager = require('../engine/riskManager');
 const FeeCalculator = require('../engine/feeCalculator');
 const PositionMonitor = require('../engine/positionMonitor');
@@ -25,6 +26,7 @@ const PumpHunterFormatter = require('../analytics/pumpHunterFormatter');
 const ExtremeAuditFormatter = require('../analytics/extremeAuditFormatter');
 const ExtremeWideFormatter = require('../analytics/extremeWideFormatter');
 const StructureAuditFormatter = require('../analytics/structureAuditFormatter');
+const StructureLevelFormatter = require('../analytics/structureLevelFormatter');
 const { formatDetailedAnalytics } = require('../analytics/formatters');
 const { CURRENT_STRATEGY_VERSION, LEGACY_STRATEGY_VERSION } = require('../config/strategy');
 const { MARKET_CONTEXT_V1_ENABLED } = require('../config/marketContext');
@@ -65,6 +67,7 @@ const {
 const {
   STRUCTURE_PROJECT,
   STRUCTURE_EXPERIMENT_ID,
+  STRUCTURE_LEVEL_EXPERIMENT_ID,
   STRUCTURE_LEVEL_ENGINE_ENABLED,
   STRUCTURE_WIDE_SCAN_ENABLED,
   STRUCTURE_EVENT_TRACKING_ENABLED,
@@ -921,10 +924,11 @@ ${insights}
           '🏗 Structure Breakout',
           '━━━━━━━━━━━━━━━━━━━━',
           `Проект: ${STRUCTURE_PROJECT}`,
-          `Эксперимент: ${STRUCTURE_EXPERIMENT_ID}`,
+          `Аудит данных: ${STRUCTURE_EXPERIMENT_ID}`,
+          `Исследование уровней: ${STRUCTURE_LEVEL_EXPERIMENT_ID}`,
           '',
           'Data Audit: ON (ручная проверка)',
-          `Level Engine: ${STRUCTURE_LEVEL_ENGINE_ENABLED ? 'ON' : 'OFF'}`,
+          `Level Engine: ${STRUCTURE_LEVEL_ENGINE_ENABLED ? 'ON (ручная диагностика)' : 'OFF'}`,
           `Wide scan: ${STRUCTURE_WIDE_SCAN_ENABLED ? 'ON' : 'OFF'}`,
           `Events: ${STRUCTURE_EVENT_TRACKING_ENABLED ? 'ON' : 'OFF'}`,
           `Paper-сигналы: ${STRUCTURE_PAPER_SIGNALS_ENABLED ? 'ON' : 'OFF'}`,
@@ -932,15 +936,16 @@ ${insights}
           'Live-сделки: OFF',
           '',
           'Проверить данные: /structure debug BTCUSDT',
+          'Построить зоны: /structure levels BTCUSDT',
           'Проверить широкую монету: /structure debug DEXEUSDT',
         ].join('\n')
       );
     }
 
-    if (mode !== 'debug') {
+    if (mode !== 'debug' && mode !== 'levels') {
       return this._sendPlain(
         userId,
-        '❌ Используй /structure или /structure debug DEXEUSDT'
+        '❌ Используй /structure, /structure debug DEXEUSDT или /structure levels BTCUSDT'
       );
     }
 
@@ -950,8 +955,17 @@ ${insights}
     } catch (_error) {
       return this._sendPlain(
         userId,
-        '❌ Неверная пара. Используй формат /structure debug BTCUSDT'
+        `❌ Неверная пара. Используй формат /structure ${mode} BTCUSDT`
       );
+    }
+
+    if (mode === 'levels') {
+      await this._sendPlain(
+        userId,
+        `🏗 Structure строит 4H/1H зоны ${pair}. Торговые сигналы не запускаются...`
+      );
+      const report = await StructureLevelEngine.analyze(this.provider, pair);
+      return this._sendPlain(userId, StructureLevelFormatter.format(report));
     }
 
     await this._sendPlain(
@@ -1780,6 +1794,7 @@ ${insights}`
 /extreme debug DEXEUSDT — аудит рыночных данных
 /structure — статус Structure Breakout
 /structure debug DEXEUSDT — аудит 4H/1H/15m свечей
+/structure levels BTCUSDT — структура рынка и зоны 4H/1H
 /signals 7 — результаты текущего эксперимента
 /research — готовность новых выборок
 /status — автопоиск, наблюдения и режимы
@@ -1800,6 +1815,7 @@ ${insights}`
 /pump debug
 /extreme debug
 /structure debug DEXEUSDT
+/structure levels BTCUSDT
 
 Live-сделки на Bybit отключены. Бот собирает и проверяет paper-сигналы.`
     );

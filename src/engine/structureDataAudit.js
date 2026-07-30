@@ -30,6 +30,7 @@ class StructureDataAudit {
         await this._auditVenue(provider, venue, normalizedPair, {
           limit,
           minConfirmed,
+          includeCandles: options.includeCandles === true,
         }),
       ])
     ));
@@ -86,26 +87,33 @@ class StructureDataAudit {
           timeframe.interval,
           options.limit
         );
-        return [
-          timeframe.label,
-          this._inspectCandles(candles, timeframe, {
+        return {
+          label: timeframe.label,
+          candles,
+          inspection: this._inspectCandles(candles, timeframe, {
             minConfirmed: options.minConfirmed,
             latencyMs: Date.now() - startedAt,
           }),
-        ];
+        };
       } catch (error) {
-        return [
-          timeframe.label,
-          this._failedTimeframe(
+        return {
+          label: timeframe.label,
+          candles: [],
+          inspection: this._failedTimeframe(
             timeframe,
             Date.now() - startedAt,
             error?.message || String(error)
           ),
-        ];
+        };
       }
     }));
 
-    const timeframes = Object.fromEntries(results);
+    const timeframes = Object.fromEntries(
+      results.map((result) => [result.label, result.inspection])
+    );
+    const candleSets = options.includeCandles
+      ? Object.fromEntries(results.map((result) => [result.label, result.candles]))
+      : undefined;
     const usableTimeframes = Object.values(timeframes)
       .filter((result) => result.usable).length;
 
@@ -115,6 +123,7 @@ class StructureDataAudit {
       usableTimeframes,
       error: null,
       timeframes,
+      ...(candleSets ? { candleSets } : {}),
     };
   }
 
