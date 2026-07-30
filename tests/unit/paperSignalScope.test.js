@@ -10,6 +10,12 @@ const shadow = bot._parsePaperSignalStatsArgs(['candidate_v2', 'detail', '7']);
 const pumpShadow = bot._parsePaperSignalStatsArgs(['pump_v2', 'edge', '30']);
 const pumpStagedExit = bot._parsePaperSignalStatsArgs(['pump_v2', 'exits', '30']);
 const pumpBaseline = bot._parsePaperSignalStatsArgs(['pump_v2_baseline', 'detail', '30']);
+const activeWithoutCandidate = bot._excludeRetiredCandidateSignals([
+  { project: 'CANDIDATE', source: 'CANDIDATE_AUTO' },
+  { project: 'CANDIDATE_V3', source: 'CANDIDATE_V3' },
+  { project: 'PUMP', source: 'PUMP_AUTO' },
+  { project: 'EXTREME', source: 'EXTREME_RADAR' },
+]);
 
 const checks = [
   {
@@ -47,6 +53,12 @@ const checks = [
     pass: pumpBaseline.project === 'pump_v2_baseline' &&
       pumpBaseline.mode === 'detail' &&
       pumpBaseline.period === '30',
+  },
+  {
+    name: 'Current aggregate excludes retired Candidate but keeps active projects',
+    pass: activeWithoutCandidate.length === 2 &&
+      activeWithoutCandidate.some((signal) => signal.project === 'PUMP') &&
+      activeWithoutCandidate.some((signal) => signal.project === 'EXTREME'),
   },
   {
     name: 'Legacy title is explicit',

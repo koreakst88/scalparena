@@ -13,15 +13,17 @@ const commands = ScalpArenaBot.BOT_COMMANDS.map((item) => item.command);
 const checks = [
   {
     name: 'Visible Telegram menu contains only primary commands',
-    pass: commands.join(',') === 'menu,candidates,pump,extreme,signals,research,status,help',
+    pass: commands.join(',') === 'menu,pump,extreme,signals,research,status,help',
   },
   {
     name: 'Legacy commands stay out of the visible Telegram menu',
     pass: !commands.some((command) => ['scan', 'stats', 'patterns', 'rm', 'exit', 'deposit'].includes(command)),
   },
   {
-    name: 'Main menu exposes both research projects',
-    pass: callbacks.includes('menu_candidates') && callbacks.includes('menu_pump'),
+    name: 'Main menu exposes Pump and Extreme but not retired Candidate',
+    pass: callbacks.includes('menu_pump') &&
+      callbacks.includes('menu_extreme') &&
+      !callbacks.includes('menu_candidates'),
   },
   {
     name: 'Main menu exposes current results, archive and active signals',
@@ -34,8 +36,8 @@ const checks = [
   },
   {
     name: 'Runtime auto states are reflected in button labels',
-    pass: keyboard.flat().some((button) => button.text === 'Candidate research: ON') &&
-      keyboard.flat().some((button) => button.text === 'Pump auto: OFF'),
+    pass: keyboard.flat().some((button) => button.text === 'Pump auto: OFF') &&
+      !keyboard.flat().some((button) => button.text.includes('Candidate')),
   },
 ];
 

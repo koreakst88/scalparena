@@ -16,7 +16,6 @@ console.log('Research Readiness Test\n');
 
 const partialSignals = [
   buildSignal('CANDIDATE_V3', 'TP_HIT', 'ALLOW', 0),
-  buildSignal('CANDIDATE_V3', 'WATCHING', 'BLOCK', 1),
   buildSignal('PUMP_V2_SHADOW', 'TIMEOUT', 'CAUTION', 2),
   buildSignal('PUMP_V2_SHADOW', 'SL_HIT', null, 3),
   buildSignal('CANDIDATE', 'TP_HIT', 'ALLOW', 4),
@@ -29,10 +28,9 @@ const partial = ResearchReadiness.calculate(partialSignals, {
 const partialMessage = ResearchReadiness.format(partial);
 
 const readySignals = [
-  buildSignal('CANDIDATE_V3', 'TP_HIT', 'ALLOW', 0),
-  buildSignal('CANDIDATE_V3', 'SL_HIT', 'BLOCK', 1),
   buildSignal('PUMP_V2_SHADOW', 'TP_HIT', 'CAUTION', 2),
   buildSignal('PUMP_V2_SHADOW', 'TIMEOUT', 'ALLOW', 3),
+  buildSignal('PUMP_V2_SHADOW', 'SL_HIT', 'BLOCK', 4),
 ];
 const ready = ResearchReadiness.calculate(readySignals, {
   projectTarget: 2,
@@ -40,9 +38,9 @@ const ready = ResearchReadiness.calculate(readySignals, {
 });
 
 const checks = [
-  { name: 'Only current V3 research projects enter the sample', pass: partial.projects[0].total === 2 && partial.projects[1].total === 2 },
-  { name: 'WATCHING rows do not count as resolved decision evidence', pass: partial.decisions.BLOCK === 0 },
-  { name: 'Rows created before context tagging are reported as UNTAGGED', pass: partial.projects[1].untaggedResolved === 1 },
+  { name: 'Retired Candidate rows do not enter the active sample', pass: partial.projects.length === 1 && partial.projects[0].total === 2 },
+  { name: 'Candidate decisions do not count as active evidence', pass: partial.decisions.ALLOW === 0 },
+  { name: 'Rows created before context tagging are reported as UNTAGGED', pass: partial.projects[0].untaggedResolved === 1 },
   { name: 'Partial sample is not marked ready', pass: partial.ready === false },
   { name: 'Report explains fixed targets and research-only status', pass: partialMessage.includes('≥2 resolved') && partialMessage.includes('research-only') },
   { name: 'Report keeps the first signal date', pass: partial.startedAt === '2026-07-19' },

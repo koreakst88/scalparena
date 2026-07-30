@@ -180,7 +180,7 @@ class PaperSignalStats {
     }
 
     if (stats.watching > 0) {
-      lines.push('', '👀 Активные наблюдения: /signals open | /signals open pump | /signals open candidates');
+      lines.push('', '👀 Активные наблюдения: /signals open | /signals open pump');
     }
 
     return lines.join('\n');

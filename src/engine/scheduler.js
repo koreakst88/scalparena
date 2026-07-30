@@ -13,6 +13,7 @@ const {
   PAPER_SIGNAL_TRACKING_ENABLED,
   PAPER_SIGNAL_ALERTS_ENABLED,
   PAPER_SIGNAL_AUTO_LOG_ENABLED,
+  CANDIDATE_PROJECT_ENABLED,
   CANDIDATE_V1_ALERTS_ENABLED,
   CANDIDATE_AUTO_SCAN_INTERVAL_MS,
   CANDIDATE_AUTO_MIN_SCORE,
@@ -74,15 +75,23 @@ class Scheduler {
   }
 
   start() {
-    if (this.scanTimer || this.candidateScanTimer || this.resetTimer) return;
+    if (
+      this.scanTimer ||
+      this.candidateScanTimer ||
+      this.pumpScanTimer ||
+      this.extremeWideScanTimer ||
+      this.resetTimer
+    ) return;
 
     console.log('⏰ Scheduler started');
 
-    this.scanTimer = setInterval(() => this._autoScan(), SCAN_INTERVAL_MS);
-    this.candidateScanTimer = setInterval(
-      () => this._candidateAutoScan(),
-      CANDIDATE_AUTO_SCAN_INTERVAL_MS
-    );
+    if (CANDIDATE_PROJECT_ENABLED) {
+      this.scanTimer = setInterval(() => this._autoScan(), SCAN_INTERVAL_MS);
+      this.candidateScanTimer = setInterval(
+        () => this._candidateAutoScan(),
+        CANDIDATE_AUTO_SCAN_INTERVAL_MS
+      );
+    }
     this.pumpScanTimer = setInterval(
       () => this._pumpAutoScan(),
       PUMP_AUTO_SCAN_INTERVAL_MS
@@ -95,18 +104,22 @@ class Scheduler {
     }
     this._scheduleDailyReset();
 
-    setTimeout(() => this._autoScan(), 5 * 60 * 1000);
-    setTimeout(() => this._candidateAutoScan(), 6 * 60 * 1000);
+    if (CANDIDATE_PROJECT_ENABLED) {
+      setTimeout(() => this._autoScan(), 5 * 60 * 1000);
+      setTimeout(() => this._candidateAutoScan(), 6 * 60 * 1000);
+    }
     setTimeout(() => this._pumpAutoScan(), 7 * 60 * 1000);
     if (EXTREME_WIDE_SCAN_ENABLED) {
       setTimeout(() => this._extremeWideDiagnosticScan(), 8 * 60 * 1000);
     }
 
-    console.log('✅ Auto-scan every 15 min | Daily reset at 08:00 Seoul');
+    console.log('✅ Daily reset at 08:00 Seoul');
     console.log(
-      `🧠 Candidate research every ${Math.round(CANDIDATE_AUTO_SCAN_INTERVAL_MS / 60000)} min ` +
-      `| V1 alerts=${CANDIDATE_V1_ALERTS_ENABLED ? 'ON' : 'OFF'} ` +
-      `| V3=${CANDIDATE_V3_ENABLED ? 'ON' : 'OFF'}`
+      CANDIDATE_PROJECT_ENABLED
+        ? `🧠 Candidate research every ${Math.round(CANDIDATE_AUTO_SCAN_INTERVAL_MS / 60000)} min ` +
+          `| V1 alerts=${CANDIDATE_V1_ALERTS_ENABLED ? 'ON' : 'OFF'} ` +
+          `| V3=${CANDIDATE_V3_ENABLED ? 'ON' : 'OFF'}`
+        : '🗄 Candidate project: RETIRED | legacy/V3 scans OFF | history preserved'
     );
     console.log(
       `🚀 Pump auto-scan every ${Math.round(PUMP_AUTO_SCAN_INTERVAL_MS / 60000)} min ` +
@@ -117,7 +130,7 @@ class Scheduler {
       `| interval ${Math.round(EXTREME_WIDE_SCAN_INTERVAL_MS / 60000)} min ` +
       `| events=${EXTREME_EVENT_TRACKING_ENABLED ? 'RESEARCH' : 'OFF'} alerts=OFF`
     );
-    console.log('⏳ First auto-scan in 5 minutes (WS data accumulation)');
+    console.log('⏳ First active project scan in 7 minutes (WS data accumulation)');
   }
 
   stop() {
@@ -145,6 +158,8 @@ class Scheduler {
   }
 
   async _autoScan() {
+    if (!CANDIDATE_PROJECT_ENABLED) return;
+
     // Crypto trades 24/7, so auto-scan should never be blocked by session hours.
     console.log('🔍 Auto-scan triggered...');
     this.lastScanTime = new Date();
@@ -181,6 +196,8 @@ class Scheduler {
   }
 
   async _candidateAutoScan() {
+    if (!CANDIDATE_PROJECT_ENABLED) return;
+
     console.log('🧠 Candidate research cycle triggered...');
     this.lastCandidateScanTime = new Date();
 
@@ -1098,10 +1115,15 @@ ${paperSignal ? '\n🧪 Paper signal записан для отслеживан�
 
   getStatus() {
     return {
+      candidateProjectEnabled: CANDIDATE_PROJECT_ENABLED,
       lastScan: this.lastScanTime,
-      nextScan: new Date(Date.now() + SCAN_INTERVAL_MS),
+      nextScan: CANDIDATE_PROJECT_ENABLED
+        ? new Date(Date.now() + SCAN_INTERVAL_MS)
+        : null,
       lastCandidateScan: this.lastCandidateScanTime,
-      nextCandidateScan: new Date(Date.now() + CANDIDATE_AUTO_SCAN_INTERVAL_MS),
+      nextCandidateScan: CANDIDATE_PROJECT_ENABLED
+        ? new Date(Date.now() + CANDIDATE_AUTO_SCAN_INTERVAL_MS)
+        : null,
       lastPumpScan: this.lastPumpScanTime,
       nextPumpScan: new Date(Date.now() + PUMP_AUTO_SCAN_INTERVAL_MS),
       extremeWideEnabled: EXTREME_WIDE_SCAN_ENABLED,

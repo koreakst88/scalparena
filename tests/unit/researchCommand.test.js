@@ -12,11 +12,11 @@ bot.db = {
     return [
       {
         pair: 'CURRENTUSDT',
-        project: 'CANDIDATE_V3',
+        project: 'PUMP_V2_SHADOW',
         status: 'TP_HIT',
-        experiment_id: 'CANDIDATE_V3_20260720',
+        experiment_id: 'PUMP_V2_ATR13_20260725',
         is_legacy: false,
-        created_at: '2026-07-19T00:00:00Z',
+        created_at: '2026-07-25T00:00:00Z',
         signal_metadata: { marketContext: { decision: 'ALLOW' } },
       },
       {
@@ -51,18 +51,18 @@ bot._sendResearchReadiness('42')
         pass: requestedSince instanceof Date && requestedSince.getTime() === 0,
       },
       {
-        name: 'Current Candidate V3 row enters the report',
-        pass: sentMessage.includes('Candidate V3: 1/30 resolved'),
+        name: 'Current Pump V2.1 row enters the report',
+        pass: sentMessage.includes('Pump V2.1: 1/30 resolved'),
       },
       {
-        name: 'Legacy and V1 rows do not pollute Pump V2.1 readiness',
-        pass: sentMessage.includes('Pump V2.1: 0/30 resolved') &&
+        name: 'Legacy and Candidate V1 rows do not pollute Pump V2.1 readiness',
+        pass: !sentMessage.includes('Candidate V3') &&
           sentMessage.includes('BLOCK 0/10'),
       },
       {
         name: 'Report identifies the active experiment',
-        pass: sentMessage.includes('CANDIDATE_V3_20260720') &&
-          sentMessage.includes('PUMP_V2_ATR13_20260725'),
+        pass: sentMessage.includes('PUMP_V2_ATR13_20260725') &&
+          !sentMessage.includes('CANDIDATE_V3_20260720'),
       },
     ];
 

@@ -9,7 +9,6 @@ class ResearchReadiness {
     const projectTarget = this._positiveInteger(options.projectTarget, DEFAULT_PROJECT_TARGET);
     const decisionTarget = this._positiveInteger(options.decisionTarget, DEFAULT_DECISION_TARGET);
     const projects = [
-      this._summarizeProject('Candidate V3', PaperSignalStats.filterByProject(signals, 'candidate_v3')),
       this._summarizeProject('Pump V2.1', PaperSignalStats.filterByProject(signals, 'pump_v2')),
     ];
     const decisions = this._emptyDecisionCounts();
@@ -65,7 +64,7 @@ class ResearchReadiness {
       '',
       readiness.ready
         ? '✅ Выборка достигла минимального порога. Можно проводить сравнительный разбор до изменения фильтров.'
-        : `⏳ Данных пока недостаточно: готовы проекты ${readiness.projectsReady}/2, BTC-группы ${readiness.decisionsReady}/3.`,
+        : `⏳ Данных пока недостаточно: готовы проекты ${readiness.projectsReady}/${readiness.projects.length}, BTC-группы ${readiness.decisionsReady}/3.`,
       'Market Context остаётся research-only и ничего не блокирует.'
     );
 

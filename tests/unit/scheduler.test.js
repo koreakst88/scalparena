@@ -25,10 +25,10 @@ const mockProvider = { getPairs: () => [], getCandles: () => [], hasEnoughData: 
 
 const scheduler = new Scheduler(mockBot, mockDb, mockProvider);
 
-console.log('1️⃣  24/7 crypto auto-scan check');
+console.log('1️⃣  Retired Candidate runtime check');
 scheduler._autoScan()
   .then(() => {
-    console.log(`   ✅ Auto-scan executed at: ${scheduler.lastScanTime.toISOString()}`);
+    console.log(`   ✅ Legacy scan timestamp: ${scheduler.lastScanTime || 'not scheduled'}`);
 
     console.log('\n2️⃣  Daily reset timer');
     const msUntilReset = scheduler._getMsUntilNext8am();
@@ -48,17 +48,15 @@ scheduler._autoScan()
     console.log('\n🎯 Final checks:');
     const checks = [
       { name: 'Scheduler создан без ошибок', pass: scheduler instanceof Scheduler },
-      { name: 'Auto-scan не блокируется временем', pass: scheduler.lastScanTime instanceof Date },
+      { name: 'Retired legacy scan does not execute', pass: scheduler.lastScanTime === null },
+      { name: 'Candidate project is disabled in scheduler status', pass: status.candidateProjectEnabled === false },
+      { name: 'Candidate next scan is absent', pass: status.nextCandidateScan === null },
       { name: 'Crypto market open всегда true', pass: status.cryptoMarketOpen === true },
       { name: 'msUntilReset > 0', pass: msUntilReset > 0 },
       { name: 'msUntilReset < 24h', pass: msUntilReset < 24 * 60 * 60 * 1000 },
       { name: 'getStatus() возвращает объект', pass: typeof status === 'object' },
       { name: '_getToday8am() возвращает дату', pass: scheduler._getToday8am() instanceof Date },
-      {
-        name: 'Legacy auto-scan excludes users already served by Candidate auto',
-        pass: legacyAlertUsers.length === 1 &&
-          legacyAlertUsers[0].telegram_id === 'candidate-off',
-      },
+      { name: 'Legacy user helper stays archived without affecting runtime', pass: Array.isArray(legacyAlertUsers) },
     ];
 
     checks.forEach((check) => console.log(`   ${check.pass ? '✅' : '❌'} ${check.name}`));

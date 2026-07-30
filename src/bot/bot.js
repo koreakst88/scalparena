@@ -63,6 +63,7 @@ const {
 const {
   PAPER_SIGNAL_TRACKING_ENABLED,
   PAPER_SIGNAL_TTL_MINUTES,
+  CANDIDATE_PROJECT_ENABLED,
   CANDIDATE_AUTO_SCAN_ENABLED,
   CANDIDATE_V1_ALERTS_ENABLED,
   CANDIDATE_AUTO_SCAN_INTERVAL_MS,
@@ -76,7 +77,6 @@ const {
 
 const BOT_COMMANDS = [
   { command: 'menu', description: 'Главная панель' },
-  { command: 'candidates', description: 'Candidate Engine' },
   { command: 'pump', description: 'PumpHunter Lab' },
   { command: 'extreme', description: 'Extreme Radar · аудит данных' },
   { command: 'signals', description: 'Paper результаты' },
@@ -164,8 +164,6 @@ class ScalpArenaBot {
     this.bot.onText(/\/rm (.+)/, this._safe((msg, match) => this._onRm(msg, match)));
     this.bot.onText(/\/exit (.+)/, this._safe((msg, match) => this._onExit(msg, match)));
     this.bot.onText(/\/stats/, this._safe((msg) => this._onStats(msg)));
-    this.bot.onText(/\/candidates/, this._safe((msg) => this._onCandidates(msg)));
-    this.bot.onText(/\/candidate_?auto(?:\s+(\S+))?/, this._safe((msg, match) => this._onCandidateAuto(msg, match)));
     this.bot.onText(/\/pump_?auto(?:\s+(\S+))?/, this._safe((msg, match) => this._onPumpAuto(msg, match)));
     this.bot.onText(/\/pump(?:\s+(\S+))?$/, this._safe((msg) => this._onPump(msg)));
     this.bot.onText(/\/extreme(?:@\w+)?(?:\s+.*)?$/, this._safe((msg) => this._onExtreme(msg)));
@@ -241,18 +239,17 @@ class ScalpArenaBot {
   }
 
   async _sendMainMenu(userId, notice = '') {
-    const candidateEnabled = this._isCandidateAutoEnabled(userId);
     const pumpEnabled = this._isPumpAutoEnabled(userId);
     const text = [
       notice,
       '📋 SCALPARENA',
       '━━━━━━━━━━━━━━━━━━━━',
-      'Два независимых paper-проекта:',
-      '🧠 Candidate Engine — рыночные сетапы',
+      'Активные исследовательские направления:',
       '🚀 PumpHunter — импульсные монеты',
+      '⚡ Extreme Radar — рыночные аномалии',
       '',
-      `Автопоиск: Candidate research ${candidateEnabled ? 'ON' : 'OFF'} | Pump ${pumpEnabled ? 'ON' : 'OFF'}`,
-      `Candidate V1 alerts: ${CANDIDATE_V1_ALERTS_ENABLED ? 'ON' : 'OFF'}`,
+      `Автопоиск PumpHunter: ${pumpEnabled ? 'ON' : 'OFF'}`,
+      `Extreme Radar: ${EXTREME_WIDE_SCAN_ENABLED ? 'ON (research)' : 'OFF'}`,
       'Live-сделки на Bybit: OFF',
     ].filter(Boolean).join('\n');
 
@@ -262,20 +259,15 @@ class ScalpArenaBot {
   }
 
   _getMainMenuKeyboard(userId) {
-    const candidateEnabled = this._isCandidateAutoEnabled(userId);
     const pumpEnabled = this._isPumpAutoEnabled(userId);
 
     return {
       inline_keyboard: [
         [
-          { text: '🧠 Candidate', callback_data: 'menu_candidates' },
           { text: '🚀 PumpHunter', callback_data: 'menu_pump' },
+          { text: '⚡ Extreme', callback_data: 'menu_extreme' },
         ],
         [
-          {
-            text: `Candidate research: ${candidateEnabled ? 'ON' : 'OFF'}`,
-            callback_data: 'menu_candidate_auto_toggle',
-          },
           {
             text: `Pump auto: ${pumpEnabled ? 'ON' : 'OFF'}`,
             callback_data: 'menu_pump_auto_toggle',
@@ -515,13 +507,6 @@ ${paperSignal ? '\n🧪 Paper signal записан для отслеживан�
       'current',
       CURRENT_PAPER_EXPERIMENT_ID
     );
-    const candidateV3Signals = PaperSignalStats.filterByExperiment(
-      activeSignals,
-      'current',
-      CANDIDATE_V3_EXPERIMENT_ID
-    );
-    const candidateCount = PaperSignalStats.filterByProject(candidateV3Signals, 'candidate_v3').length;
-    const candidateV2Count = PaperSignalStats.filterByProject(currentSignals, 'candidate_v2').length;
     const pumpCount = PaperSignalStats.filterByProject(currentSignals, 'pump').length;
     const pumpV2Signals = PaperSignalStats.filterByExperiment(
       activeSignals,
@@ -535,20 +520,16 @@ ${paperSignal ? '\n🧪 Paper signal записан для отслеживан�
     const text = [
       '⚙️ SCALPARENA STATUS',
       '━━━━━━━━━━━━━━━━━━━━',
-      `Candidate research: ${this._isCandidateAutoEnabled(userId) ? 'ON' : 'OFF'}`,
-      `Candidate V1 alerts: ${CANDIDATE_V1_ALERTS_ENABLED ? 'ON' : 'OFF'}`,
-      `Старый Auto-scan: ${this._isCandidateAutoEnabled(userId) ? 'PAUSED (без дублей)' : 'ON'}`,
-      `Последний цикл: ${this._formatStatusTime(schedulerStatus.lastCandidateScan)}`,
-      '',
       `Pump auto: ${this._isPumpAutoEnabled(userId) ? 'ON' : 'OFF'}`,
       `Последний цикл: ${this._formatStatusTime(schedulerStatus.lastPumpScan)}`,
       '',
+      `Extreme Radar: ${schedulerStatus.extremeWideEnabled ? 'ON (research)' : 'OFF'}`,
+      `Последний цикл: ${this._formatStatusTime(schedulerStatus.lastExtremeWideScan)}`,
+      `Extreme events: ${schedulerStatus.extremeEventTrackingEnabled ? 'ON (research)' : 'OFF'}`,
+      '',
       `Paper tracking: ${PAPER_SIGNAL_TRACKING_ENABLED ? 'ON' : 'OFF'}`,
-      `Candidate эксперимент: ${CANDIDATE_V3_EXPERIMENT_ID}`,
-      `Остальные проекты: ${CURRENT_PAPER_EXPERIMENT_ID}`,
-      `Активные: Candidate ${candidateCount} | Pump ${pumpCount} | Hybrid ${hybridCount}`,
-      `Candidate V3: ${CANDIDATE_V3_ENABLED ? 'ON' : 'OFF'} | активных ${candidateCount} | alerts OFF`,
-      `Candidate V2: ARCHIVE | активных старых ${candidateV2Count}`,
+      `Текущий эксперимент: ${CURRENT_PAPER_EXPERIMENT_ID}`,
+      `Активные: Pump ${pumpCount} | Hybrid ${hybridCount}`,
       `Pump State V2.1: ${PUMP_V2_SHADOW_ENABLED ? 'ON' : 'OFF'} | активных ${pumpV2Count} | alerts OFF`,
       `Market Context V1: ${MARKET_CONTEXT_V1_ENABLED ? 'ON (research only)' : 'OFF'}`,
       `Ручные позиции: ${positions?.length || 0}`,
@@ -559,10 +540,6 @@ ${paperSignal ? '\n🧪 Paper signal записан для отслеживан�
       reply_markup: {
         inline_keyboard: [
           [
-            {
-              text: `Candidate research: ${this._isCandidateAutoEnabled(userId) ? 'ON' : 'OFF'}`,
-              callback_data: 'menu_candidate_auto_toggle',
-            },
             {
               text: `Pump auto: ${this._isPumpAutoEnabled(userId) ? 'ON' : 'OFF'}`,
               callback_data: 'menu_pump_auto_toggle',
@@ -1155,11 +1132,10 @@ ${insights}`
   async _sendResearchReadiness(userId) {
     const signals = await this.db.getPaperSignalsSince(userId, new Date(0));
     const researchSignals = signals.filter((signal) => (
-      signal.experiment_id === CANDIDATE_V3_EXPERIMENT_ID ||
       signal.experiment_id === PUMP_V2_EXPERIMENT_ID
     ));
     const readiness = ResearchReadiness.calculate(researchSignals, {
-      experimentId: `${CANDIDATE_V3_EXPERIMENT_ID} + ${PUMP_V2_EXPERIMENT_ID}`,
+      experimentId: PUMP_V2_EXPERIMENT_ID,
     });
 
     await this._sendPlain(userId, ResearchReadiness.format(readiness));
@@ -1184,7 +1160,13 @@ ${insights}`
         ].includes(signal.experiment_id)
       ))
       : PaperSignalStats.filterByExperiment(signals, options.scope, currentExperimentId);
-    const projectSignals = PaperSignalStats.filterByProject(experimentSignals, options.project);
+    const activeExperimentSignals = options.scope === 'current' && options.project === 'all'
+      ? this._excludeRetiredCandidateSignals(experimentSignals)
+      : experimentSignals;
+    const projectSignals = PaperSignalStats.filterByProject(
+      activeExperimentSignals,
+      options.project
+    );
     const title = this._formatPaperSignalStatsTitle(
       period.title.replace(/[*📊]/g, '').replace('Период:', '').trim(),
       options.project,
@@ -1275,6 +1257,25 @@ ${insights}`
 
     if (scope === 'legacy' && project === 'candidate_v3') project = 'candidate_v1';
     return { mode, project, scope, period };
+  }
+
+  _excludeRetiredCandidateSignals(signals = []) {
+    const retiredProjects = new Set([
+      'CANDIDATE',
+      'CANDIDATE_V2_SHADOW',
+      'CANDIDATE_V3',
+    ]);
+    const retiredSources = new Set([
+      'CANDIDATE_ENGINE',
+      'CANDIDATE_AUTO',
+      'CANDIDATE_V2_SHADOW',
+      'CANDIDATE_V3',
+    ]);
+
+    return signals.filter((signal) => (
+      !retiredProjects.has(signal.project) &&
+      !retiredSources.has(signal.source)
+    ));
   }
 
   _formatPaperSignalStatsTitle(periodTitle, project = 'all', scope = 'current') {
@@ -1550,6 +1551,8 @@ ${insights}`
   }
 
   _isCandidateAutoEnabled(userId) {
+    if (!CANDIDATE_PROJECT_ENABLED) return false;
+
     const key = String(userId);
     if (this.candidateAutoOverrides.has(key)) {
       return this.candidateAutoOverrides.get(key);
@@ -1701,7 +1704,6 @@ ${insights}`
 ━━━━━━━━━━━━━━━━━━━━
 
 /menu — главная панель и автопоиск
-/candidates — Candidate Engine сейчас
 /pump — PumpHunter сейчас
 /extreme — статус Extreme Radar
 /extreme scan — широкий диагностический срез без сигналов
@@ -1711,23 +1713,17 @@ ${insights}`
 /status — автопоиск, наблюдения и режимы
 
 Раздельные отчёты:
-/signals candidate 7
 /signals pump 7
 /signals pump edge 7
-/signals candidate_v2 detail 30
-/signals candidate_v1 detail 30
 /signals pump_v2 detail 30
 /signals pump_v2 exits 30
 /signals pump_v2_baseline detail 30
-/signals open candidates
 /signals open pump
 
 Архив до перезапуска эксперимента:
-/signals legacy candidates 30
 /signals legacy pump 30
 
 Диагностика при необходимости:
-/candidates full
 /pump full
 /pump debug
 /extreme debug
@@ -1751,19 +1747,31 @@ Live-сделки на Bybit отключены. Бот собирает и пр
     }
 
     if (data === 'menu_candidates') {
-      return this._sendCandidates(userId, 'top');
+      return this._sendMainMenu(
+        userId,
+        '🗄 Candidate выведен из активного проекта. Исторические данные сохранены в Supabase.'
+      );
     }
 
     if (data === 'menu_pump') {
       return this._sendPumpHunter(userId, 'top');
     }
 
+    if (data === 'menu_extreme') {
+      return this._onExtreme({ chat: { id: userId }, text: '/extreme' });
+    }
+
     if (data === 'menu_candidate_auto_toggle') {
-      const enabled = !this._isCandidateAutoEnabled(userId);
-      this.candidateAutoOverrides.set(userId, enabled);
       return this._sendMainMenu(
         userId,
-        `${enabled ? '✅' : '⏸️'} Candidate research ${enabled ? 'включен' : 'выключен'} до следующего redeploy.`
+        '🗄 Candidate выведен из активного проекта и не может быть включён старой кнопкой.'
+      );
+    }
+
+    if (data.startsWith('candidates_')) {
+      return this._sendMainMenu(
+        userId,
+        '🗄 Эта кнопка относится к закрытому Candidate. Новый скан и paper-запись не запускаются.'
       );
     }
 
@@ -1794,22 +1802,6 @@ Live-сделки на Bybit отключены. Бот собирает и пр
 
     if (data === 'menu_status') {
       return this._sendSystemStatus(userId);
-    }
-
-    if (data === 'candidates_refresh') {
-      return this._sendCandidates(userId, 'top');
-    }
-
-    if (data === 'candidates_full') {
-      return this._sendCandidateSnapshotDetails(userId, query.message.message_id);
-    }
-
-    if (data === 'candidates_paper') {
-      return this._writeCandidateSnapshotToPaper(userId, query.message.message_id);
-    }
-
-    if (data === 'candidates_stats') {
-      return this._sendPaperSignalStats(userId, ['candidate_v1', '7']);
     }
 
     if (data === 'pump_stats') {
