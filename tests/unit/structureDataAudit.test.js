@@ -63,7 +63,7 @@ StructureDataAudit.run(provider, 'dexe/usdt')
       {
         name: 'Audit keeps every trading action disabled',
         pass: message.includes('Level Engine: не запускался этой командой') &&
-          message.includes('Wide scan: OFF') &&
+          message.includes('Wide Radar: не запускался этой командой') &&
           message.includes('Paper-сигналы: OFF') &&
           message.includes('Telegram-алерты: OFF'),
       },

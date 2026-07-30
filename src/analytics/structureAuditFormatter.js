@@ -23,7 +23,7 @@ class StructureAuditFormatter {
       ...venueRows,
       '',
       'Level Engine: не запускался этой командой',
-      'Wide scan: OFF',
+      'Wide Radar: не запускался этой командой',
       'Events: OFF',
       'Paper-сигналы: OFF',
       'Telegram-алерты: OFF',

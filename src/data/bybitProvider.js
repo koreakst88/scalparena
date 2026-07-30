@@ -584,6 +584,28 @@ class BybitDataProvider {
     }
   }
 
+  async getGateSpotSymbols() {
+    try {
+      const response = await axios.get('https://api.gateio.ws/api/v4/spot/currency_pairs', {
+        timeout: 20000,
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+
+      return (response.data || [])
+        .map((pair) => String(pair.id || '').toUpperCase())
+        .filter((pair) => pair.endsWith('_USDT'))
+        .map((pair) => this._gateContractToSymbol(pair));
+    } catch (error) {
+      console.error(
+        '❌ Gate spot symbols request failed:',
+        error.response?.status || error.message
+      );
+      return [];
+    }
+  }
+
   async getGateFuturesKlines(pair, interval = '15', limit = 200) {
     this.lastGateMarketError = null;
 

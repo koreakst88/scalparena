@@ -12,6 +12,7 @@ const ExtremeDataAudit = require('../engine/extremeDataAudit');
 const ExtremeWideRadar = require('../engine/extremeWideRadar');
 const StructureDataAudit = require('../engine/structureDataAudit');
 const StructureLevelEngine = require('../engine/structureLevelEngine');
+const StructureWideRadar = require('../engine/structureWideRadar');
 const RiskManager = require('../engine/riskManager');
 const FeeCalculator = require('../engine/feeCalculator');
 const PositionMonitor = require('../engine/positionMonitor');
@@ -27,6 +28,7 @@ const ExtremeAuditFormatter = require('../analytics/extremeAuditFormatter');
 const ExtremeWideFormatter = require('../analytics/extremeWideFormatter');
 const StructureAuditFormatter = require('../analytics/structureAuditFormatter');
 const StructureLevelFormatter = require('../analytics/structureLevelFormatter');
+const StructureWideFormatter = require('../analytics/structureWideFormatter');
 const { formatDetailedAnalytics } = require('../analytics/formatters');
 const { CURRENT_STRATEGY_VERSION, LEGACY_STRATEGY_VERSION } = require('../config/strategy');
 const { MARKET_CONTEXT_V1_ENABLED } = require('../config/marketContext');
@@ -68,8 +70,11 @@ const {
   STRUCTURE_PROJECT,
   STRUCTURE_EXPERIMENT_ID,
   STRUCTURE_LEVEL_EXPERIMENT_ID,
+  STRUCTURE_WIDE_EXPERIMENT_ID,
   STRUCTURE_LEVEL_ENGINE_ENABLED,
   STRUCTURE_WIDE_SCAN_ENABLED,
+  STRUCTURE_WIDE_SCAN_LIMIT,
+  STRUCTURE_WIDE_MIN_TURNOVER_USD,
   STRUCTURE_EVENT_TRACKING_ENABLED,
   STRUCTURE_PAPER_SIGNALS_ENABLED,
   STRUCTURE_ALERTS_ENABLED,
@@ -93,7 +98,7 @@ const BOT_COMMANDS = [
   { command: 'menu', description: 'Главная панель' },
   { command: 'pump', description: 'PumpHunter Lab' },
   { command: 'extreme', description: 'Extreme Radar · аудит данных' },
-  { command: 'structure', description: 'Structure · аудит уровней' },
+  { command: 'structure', description: 'Structure · уровни и широкий радар' },
   { command: 'signals', description: 'Paper результаты' },
   { command: 'research', description: 'Готовность исследования' },
   { command: 'status', description: 'Состояние системы' },
@@ -263,7 +268,7 @@ class ScalpArenaBot {
       'Активные исследовательские направления:',
       '🚀 PumpHunter — импульсные монеты',
       '⚡ Extreme Radar — рыночные аномалии',
-      '🏗 Structure — уровни и пробои (data audit)',
+      '🏗 Structure — уровни, сжатие и пробои',
       '',
       `Автопоиск PumpHunter: ${pumpEnabled ? 'ON' : 'OFF'}`,
       `Extreme Radar: ${EXTREME_WIDE_SCAN_ENABLED ? 'ON (research)' : 'OFF'}`,
@@ -926,10 +931,13 @@ ${insights}
           `Проект: ${STRUCTURE_PROJECT}`,
           `Аудит данных: ${STRUCTURE_EXPERIMENT_ID}`,
           `Исследование уровней: ${STRUCTURE_LEVEL_EXPERIMENT_ID}`,
+          `Wide Radar: ${STRUCTURE_WIDE_EXPERIMENT_ID}`,
           '',
           'Data Audit: ON (ручная проверка)',
           `Level Engine: ${STRUCTURE_LEVEL_ENGINE_ENABLED ? 'ON (ручная диагностика)' : 'OFF'}`,
-          `Wide scan: ${STRUCTURE_WIDE_SCAN_ENABLED ? 'ON' : 'OFF'}`,
+          `Wide Radar: ${STRUCTURE_WIDE_SCAN_ENABLED ? 'ON (ручная диагностика)' : 'OFF'}`,
+          `Глубокий анализ за scan: до ${STRUCTURE_WIDE_SCAN_LIMIT} пар`,
+          `Минимальный оборот: $${Math.round(STRUCTURE_WIDE_MIN_TURNOVER_USD / 1000000)}M`,
           `Events: ${STRUCTURE_EVENT_TRACKING_ENABLED ? 'ON' : 'OFF'}`,
           `Paper-сигналы: ${STRUCTURE_PAPER_SIGNALS_ENABLED ? 'ON' : 'OFF'}`,
           `Telegram-алерты: ${STRUCTURE_ALERTS_ENABLED ? 'ON' : 'OFF'}`,
@@ -937,15 +945,39 @@ ${insights}
           '',
           'Проверить данные: /structure debug BTCUSDT',
           'Построить зоны: /structure levels BTCUSDT',
+          'Проверить широкий рынок: /structure scan',
           'Проверить широкую монету: /structure debug DEXEUSDT',
         ].join('\n')
       );
     }
 
+    if (mode === 'scan') {
+      await this._sendPlain(
+        userId,
+        '🏗 Structure Radar проверяет широкий рынок. События и сигналы не создаются...'
+      );
+      const scan = await StructureWideRadar.scan(this.provider);
+      scan.diagnosticSaved = false;
+
+      try {
+        await this.db.createResearchScanDiagnostic(
+          StructureWideRadar.toDiagnostic(scan)
+        );
+        scan.diagnosticSaved = true;
+      } catch (error) {
+        console.error(
+          '❌ Structure manual diagnostic write failed:',
+          error?.message || error
+        );
+      }
+
+      return this._sendPlain(userId, StructureWideFormatter.format(scan));
+    }
+
     if (mode !== 'debug' && mode !== 'levels') {
       return this._sendPlain(
         userId,
-        '❌ Используй /structure, /structure debug DEXEUSDT или /structure levels BTCUSDT'
+        '❌ Используй /structure, /structure scan, /structure debug DEXEUSDT или /structure levels BTCUSDT'
       );
     }
 
@@ -1795,6 +1827,7 @@ ${insights}`
 /structure — статус Structure Breakout
 /structure debug DEXEUSDT — аудит 4H/1H/15m свечей
 /structure levels BTCUSDT — структура рынка и зоны 4H/1H
+/structure scan — широкий диагностический поиск Structure
 /signals 7 — результаты текущего эксперимента
 /research — готовность новых выборок
 /status — автопоиск, наблюдения и режимы
@@ -1816,6 +1849,7 @@ ${insights}`
 /extreme debug
 /structure debug DEXEUSDT
 /structure levels BTCUSDT
+/structure scan
 
 Live-сделки на Bybit отключены. Бот собирает и проверяет paper-сигналы.`
     );
