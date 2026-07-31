@@ -13,6 +13,7 @@ const ExtremeWideRadar = require('../engine/extremeWideRadar');
 const StructureDataAudit = require('../engine/structureDataAudit');
 const StructureLevelEngine = require('../engine/structureLevelEngine');
 const StructureWideRadar = require('../engine/structureWideRadar');
+const StructureEventTracker = require('../engine/structureEventTracker');
 const RiskManager = require('../engine/riskManager');
 const FeeCalculator = require('../engine/feeCalculator');
 const PositionMonitor = require('../engine/positionMonitor');
@@ -29,6 +30,7 @@ const ExtremeWideFormatter = require('../analytics/extremeWideFormatter');
 const StructureAuditFormatter = require('../analytics/structureAuditFormatter');
 const StructureLevelFormatter = require('../analytics/structureLevelFormatter');
 const StructureWideFormatter = require('../analytics/structureWideFormatter');
+const StructureEventFormatter = require('../analytics/structureEventFormatter');
 const { formatDetailedAnalytics } = require('../analytics/formatters');
 const { CURRENT_STRATEGY_VERSION, LEGACY_STRATEGY_VERSION } = require('../config/strategy');
 const { MARKET_CONTEXT_V1_ENABLED } = require('../config/marketContext');
@@ -71,10 +73,13 @@ const {
   STRUCTURE_EXPERIMENT_ID,
   STRUCTURE_LEVEL_EXPERIMENT_ID,
   STRUCTURE_WIDE_EXPERIMENT_ID,
+  STRUCTURE_EVENT_EXPERIMENT_ID,
   STRUCTURE_LEVEL_ENGINE_ENABLED,
   STRUCTURE_WIDE_SCAN_ENABLED,
   STRUCTURE_WIDE_SCAN_LIMIT,
   STRUCTURE_WIDE_MIN_TURNOVER_USD,
+  STRUCTURE_AUTO_RESEARCH_ENABLED,
+  STRUCTURE_AUTO_SCAN_INTERVAL_MS,
   STRUCTURE_EVENT_TRACKING_ENABLED,
   STRUCTURE_PAPER_SIGNALS_ENABLED,
   STRUCTURE_ALERTS_ENABLED,
@@ -122,6 +127,7 @@ class ScalpArenaBot {
     this.monitor = null;
     this.scheduler = null;
     this.paperSignalTracker = null;
+    this.structureEventTracker = new StructureEventTracker(this.db);
     this.ready = false;
     this.commandsRegistered = false;
     this.pendingSignals = new Map();
@@ -272,6 +278,7 @@ class ScalpArenaBot {
       '',
       `Автопоиск PumpHunter: ${pumpEnabled ? 'ON' : 'OFF'}`,
       `Extreme Radar: ${EXTREME_WIDE_SCAN_ENABLED ? 'ON (research)' : 'OFF'}`,
+      `Structure research: ${STRUCTURE_AUTO_RESEARCH_ENABLED ? 'ON' : 'OFF'}`,
       'Live-сделки на Bybit: OFF',
     ].filter(Boolean).join('\n');
 
@@ -551,6 +558,10 @@ ${paperSignal ? '\n🧪 Paper signal записан для отслеживан�
       `Extreme Radar: ${schedulerStatus.extremeWideEnabled ? 'ON (research)' : 'OFF'}`,
       `Последний цикл: ${this._formatStatusTime(schedulerStatus.lastExtremeWideScan)}`,
       `Extreme events: ${schedulerStatus.extremeEventTrackingEnabled ? 'ON (research)' : 'OFF'}`,
+      '',
+      `Structure research: ${schedulerStatus.structureAutoResearchEnabled ? 'ON' : 'OFF'}`,
+      `Последний цикл: ${this._formatStatusTime(schedulerStatus.lastStructureWideScan)}`,
+      `Structure events: ${schedulerStatus.structureEventTrackingEnabled ? 'ON (research)' : 'OFF'}`,
       '',
       `Paper tracking: ${PAPER_SIGNAL_TRACKING_ENABLED ? 'ON' : 'OFF'}`,
       `Текущий эксперимент: ${CURRENT_PAPER_EXPERIMENT_ID}`,
@@ -923,6 +934,32 @@ ${insights}
     const mode = String(parts[1] || 'status').toLowerCase();
 
     if (mode === 'status') {
+      let storageStatus = 'NOT READY';
+      let activeEvents = 'n/a';
+      let eventStates = 'n/a';
+
+      try {
+        const events = await this.db.getActiveStructureEvents();
+        storageStatus = 'READY';
+        activeEvents = events.length;
+        const stateCounts = events.reduce((counts, event) => {
+          counts[event.state] = (counts[event.state] || 0) + 1;
+          return counts;
+        }, {});
+        eventStates = [
+          `WATCH ${stateCounts.WATCH || 0}`,
+          `ARMED ${stateCounts.ARMED || 0}`,
+          `TRIGGERED ${stateCounts.TRIGGERED || 0}`,
+        ].join(' | ');
+      } catch (error) {
+        const message = String(error?.message || '');
+        storageStatus = (
+          error?.code === '42P01' ||
+          error?.code === 'PGRST205' ||
+          message.includes('structure_events')
+        ) ? 'MIGRATION REQUIRED' : 'UNAVAILABLE';
+      }
+
       return this._sendPlain(
         userId,
         [
@@ -932,13 +969,19 @@ ${insights}
           `Аудит данных: ${STRUCTURE_EXPERIMENT_ID}`,
           `Исследование уровней: ${STRUCTURE_LEVEL_EXPERIMENT_ID}`,
           `Wide Radar: ${STRUCTURE_WIDE_EXPERIMENT_ID}`,
+          `Event lifecycle: ${STRUCTURE_EVENT_EXPERIMENT_ID}`,
+          `Хранилище structure_events: ${storageStatus}`,
+          `Активных research-событий: ${activeEvents}`,
+          `Состояния: ${eventStates}`,
           '',
           'Data Audit: ON (ручная проверка)',
           `Level Engine: ${STRUCTURE_LEVEL_ENGINE_ENABLED ? 'ON (ручная диагностика)' : 'OFF'}`,
           `Wide Radar: ${STRUCTURE_WIDE_SCAN_ENABLED ? 'ON (ручная диагностика)' : 'OFF'}`,
           `Глубокий анализ за scan: до ${STRUCTURE_WIDE_SCAN_LIMIT} пар`,
           `Минимальный оборот: $${Math.round(STRUCTURE_WIDE_MIN_TURNOVER_USD / 1000000)}M`,
-          `Events: ${STRUCTURE_EVENT_TRACKING_ENABLED ? 'ON' : 'OFF'}`,
+          `Авто research scan: ${STRUCTURE_AUTO_RESEARCH_ENABLED ? 'ON' : 'OFF'}` +
+            ` | ${Math.round(STRUCTURE_AUTO_SCAN_INTERVAL_MS / 60000)} мин`,
+          `Events: ${STRUCTURE_EVENT_TRACKING_ENABLED ? 'ON (research only)' : 'OFF'}`,
           `Paper-сигналы: ${STRUCTURE_PAPER_SIGNALS_ENABLED ? 'ON' : 'OFF'}`,
           `Telegram-алерты: ${STRUCTURE_ALERTS_ENABLED ? 'ON' : 'OFF'}`,
           'Live-сделки: OFF',
@@ -946,6 +989,7 @@ ${insights}
           'Проверить данные: /structure debug BTCUSDT',
           'Построить зоны: /structure levels BTCUSDT',
           'Проверить широкий рынок: /structure scan',
+          'Активные события: /structure events',
           'Проверить широкую монету: /structure debug DEXEUSDT',
         ].join('\n')
       );
@@ -954,10 +998,24 @@ ${insights}
     if (mode === 'scan') {
       await this._sendPlain(
         userId,
-        '🏗 Structure Radar проверяет широкий рынок. События и сигналы не создаются...'
+        '🏗 Structure Radar проверяет рынок. Paper и Telegram-алерты не создаются...'
       );
       const scan = await StructureWideRadar.scan(this.provider);
       scan.diagnosticSaved = false;
+
+      if (STRUCTURE_EVENT_TRACKING_ENABLED) {
+        try {
+          const tracker = this.structureEventTracker ||
+            new StructureEventTracker(this.db);
+          scan.eventTracking = await tracker.processScan(scan);
+          scan.eventsCreated = scan.eventTracking.created;
+        } catch (error) {
+          console.error(
+            '❌ Structure manual event tracking failed:',
+            error?.message || error
+          );
+        }
+      }
 
       try {
         await this.db.createResearchScanDiagnostic(
@@ -974,10 +1032,25 @@ ${insights}
       return this._sendPlain(userId, StructureWideFormatter.format(scan));
     }
 
+    if (mode === 'events') {
+      try {
+        const events = await this.db.getActiveStructureEvents();
+        return this._sendPlain(
+          userId,
+          StructureEventFormatter.format(events)
+        );
+      } catch (error) {
+        return this._sendPlain(
+          userId,
+          '❌ Structure events недоступны. Проверь миграцию structure_events.'
+        );
+      }
+    }
+
     if (mode !== 'debug' && mode !== 'levels') {
       return this._sendPlain(
         userId,
-        '❌ Используй /structure, /structure scan, /structure debug DEXEUSDT или /structure levels BTCUSDT'
+        '❌ Используй /structure, /structure scan, /structure events, /structure debug DEXEUSDT или /structure levels BTCUSDT'
       );
     }
 
@@ -1828,6 +1901,7 @@ ${insights}`
 /structure debug DEXEUSDT — аудит 4H/1H/15m свечей
 /structure levels BTCUSDT — структура рынка и зоны 4H/1H
 /structure scan — широкий диагностический поиск Structure
+/structure events — активные WATCH/ARMED/TRIGGERED
 /signals 7 — результаты текущего эксперимента
 /research — готовность новых выборок
 /status — автопоиск, наблюдения и режимы
@@ -1850,6 +1924,7 @@ ${insights}`
 /structure debug DEXEUSDT
 /structure levels BTCUSDT
 /structure scan
+/structure events
 
 Live-сделки на Bybit отключены. Бот собирает и проверяет paper-сигналы.`
     );

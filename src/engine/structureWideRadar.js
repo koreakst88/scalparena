@@ -310,17 +310,20 @@ class StructureWideRadar {
       rejection_counts: scan.rejectionCounts,
       context_rejection_counts: {},
       market_context: {
-        mode: 'STRUCTURE_WIDE_DIAGNOSTIC_ONLY',
+        mode: scan.eventTracking?.enabled
+          ? 'STRUCTURE_WIDE_RESEARCH_LIFECYCLE'
+          : 'STRUCTURE_WIDE_DIAGNOSTIC_ONLY',
         marketScope: scan.marketScope,
         spotVerificationEnabled: scan.spotVerificationEnabled,
         spotPairs: scan.spotPairs,
         liquidPairs: scan.liquidPairs,
         deepScanSelected: scan.deepScanSelected,
         settings: scan.settings,
-        signalsGenerated: 0,
-        eventsCreated: 0,
-        paperSignalsCreated: 0,
-        alertsSent: 0,
+        eventTracking: scan.eventTracking || null,
+        signalsGenerated: scan.signalsGenerated || 0,
+        eventsCreated: scan.eventsCreated || 0,
+        paperSignalsCreated: scan.paperSignalsCreated || 0,
+        alertsSent: scan.alertsSent || 0,
       },
       examples: scan.reports.slice(0, limit).map((report) => ({
         pair: report.pair,

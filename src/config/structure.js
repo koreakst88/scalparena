@@ -9,11 +9,34 @@ function parsePositiveNumber(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parseBoolean(value, fallback = false) {
+  if (value == null || value === '') return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
+}
+
+const STRUCTURE_EVENT_STATES = Object.freeze({
+  WATCH: 'WATCH',
+  ARMED: 'ARMED',
+  TRIGGERED: 'TRIGGERED',
+  EXPIRED: 'EXPIRED',
+  INVALIDATED: 'INVALIDATED',
+  RESOLVED: 'RESOLVED',
+});
+
+const STRUCTURE_SCENARIOS = Object.freeze({
+  RESISTANCE_TEST: 'RESISTANCE_TEST',
+  SUPPORT_TEST: 'SUPPORT_TEST',
+  ZONE_COMPRESSION: 'ZONE_COMPRESSION',
+});
+
 module.exports = {
   STRUCTURE_PROJECT: 'STRUCTURE',
   STRUCTURE_EXPERIMENT_ID: 'STRUCTURE_V1_DATA_AUDIT_20260731',
   STRUCTURE_LEVEL_EXPERIMENT_ID: 'STRUCTURE_V1_LEVEL_RESEARCH_20260731',
   STRUCTURE_WIDE_EXPERIMENT_ID: 'STRUCTURE_V1_WIDE_DIAGNOSTIC_20260731',
+  STRUCTURE_EVENT_EXPERIMENT_ID: 'STRUCTURE_V1_EVENT_RESEARCH_20260731',
+  STRUCTURE_EVENT_STATES,
+  STRUCTURE_SCENARIOS,
   STRUCTURE_TIMEFRAMES,
   STRUCTURE_AUDIT_CANDLE_LIMIT: 200,
   STRUCTURE_AUDIT_MIN_CONFIRMED_CANDLES: 180,
@@ -47,7 +70,46 @@ module.exports = {
     process.env.STRUCTURE_WIDE_REPORT_LIMIT,
     10
   ),
-  STRUCTURE_EVENT_TRACKING_ENABLED: false,
+  STRUCTURE_AUTO_RESEARCH_ENABLED: parseBoolean(
+    process.env.STRUCTURE_AUTO_RESEARCH_ENABLED,
+    false
+  ),
+  STRUCTURE_AUTO_SCAN_INTERVAL_MS: parsePositiveNumber(
+    process.env.STRUCTURE_AUTO_SCAN_INTERVAL_MS,
+    5 * 60 * 1000
+  ),
+  STRUCTURE_EVENT_TRACKING_ENABLED: parseBoolean(
+    process.env.STRUCTURE_EVENT_TRACKING_ENABLED,
+    false
+  ),
+  STRUCTURE_EVENT_ARM_SCORE: parsePositiveNumber(
+    process.env.STRUCTURE_EVENT_ARM_SCORE,
+    70
+  ),
+  STRUCTURE_EVENT_ARM_OBSERVATIONS: parsePositiveNumber(
+    process.env.STRUCTURE_EVENT_ARM_OBSERVATIONS,
+    2
+  ),
+  STRUCTURE_EVENT_TRIGGER_BUFFER_PERCENT: parsePositiveNumber(
+    process.env.STRUCTURE_EVENT_TRIGGER_BUFFER_PERCENT,
+    0.15
+  ),
+  STRUCTURE_EVENT_INVALIDATION_PERCENT: parsePositiveNumber(
+    process.env.STRUCTURE_EVENT_INVALIDATION_PERCENT,
+    1.5
+  ),
+  STRUCTURE_EVENT_STALE_MINUTES: parsePositiveNumber(
+    process.env.STRUCTURE_EVENT_STALE_MINUTES,
+    20
+  ),
+  STRUCTURE_EVENT_MAX_HOURS: parsePositiveNumber(
+    process.env.STRUCTURE_EVENT_MAX_HOURS,
+    6
+  ),
+  STRUCTURE_EVENT_HISTORY_LIMIT: parsePositiveNumber(
+    process.env.STRUCTURE_EVENT_HISTORY_LIMIT,
+    100
+  ),
   STRUCTURE_PAPER_SIGNALS_ENABLED: false,
   STRUCTURE_ALERTS_ENABLED: false,
 };

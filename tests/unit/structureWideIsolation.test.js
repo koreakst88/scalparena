@@ -1,5 +1,7 @@
 const fs = require('fs');
 const path = require('path');
+delete process.env.STRUCTURE_AUTO_RESEARCH_ENABLED;
+delete process.env.STRUCTURE_EVENT_TRACKING_ENABLED;
 const ScalpArenaBot = require('../../src/bot/bot');
 const StructureWideRadar = require('../../src/engine/structureWideRadar');
 
@@ -80,13 +82,14 @@ bot._onStructure({
       {
         name: 'Telegram output remains explicitly diagnostic-only',
         pass: messages.some((message) => (
-          message.includes('Events: 0 | Paper: 0 | Alerts: OFF | Live: OFF')
+          message.includes('Research lifecycle: OFF') &&
+          message.includes('Paper: 0 | Alerts: OFF | Live: OFF')
         )),
       },
       {
-        name: 'Structure Radar has no automatic scheduler hook in stage 3',
-        pass: !schedulerSource.includes('structureWideRadar') &&
-          !schedulerSource.includes('StructureWideRadar'),
+        name: 'Automatic lifecycle remains guarded by explicit environment switch',
+        pass: schedulerSource.includes('STRUCTURE_AUTO_RESEARCH_ENABLED') &&
+          schedulerSource.includes('STRUCTURE_EVENT_TRACKING_ENABLED'),
       },
     ];
 

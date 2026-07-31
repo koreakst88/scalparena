@@ -7,6 +7,8 @@ const PumpHunterEngine = require('./pumpHunterEngine');
 const PumpStateMachineV2 = require('./pumpStateMachineV2');
 const ExtremeWideRadar = require('./extremeWideRadar');
 const ExtremeEventTracker = require('./extremeEventTracker');
+const StructureWideRadar = require('./structureWideRadar');
+const StructureEventTracker = require('./structureEventTracker');
 const MarketContextV1 = require('./marketContextV1');
 const RiskManager = require('./riskManager');
 const {
@@ -48,6 +50,11 @@ const {
   EXTREME_WIDE_SCAN_INTERVAL_MS,
   EXTREME_EVENT_TRACKING_ENABLED,
 } = require('../config/extremeRadar');
+const {
+  STRUCTURE_AUTO_RESEARCH_ENABLED,
+  STRUCTURE_AUTO_SCAN_INTERVAL_MS,
+  STRUCTURE_EVENT_TRACKING_ENABLED,
+} = require('../config/structure');
 
 const SCAN_INTERVAL_MS = 15 * 60 * 1000;
 const SEOUL_TIMEZONE = process.env.TIMEZONE || 'Asia/Seoul';
@@ -61,17 +68,22 @@ class Scheduler {
     this.candidateScanTimer = null;
     this.pumpScanTimer = null;
     this.extremeWideScanTimer = null;
+    this.structureWideScanTimer = null;
     this.resetTimer = null;
     this.lastScanTime = null;
     this.lastCandidateScanTime = null;
     this.lastPumpScanTime = null;
     this.lastExtremeWideScanTime = null;
+    this.lastStructureWideScanTime = null;
     this.candidateAlertCooldowns = new Map();
     this.pumpAlertCooldowns = new Map();
     this.candidateDiagnosticsUnavailable = false;
     this.extremeDiagnosticsUnavailable = false;
     this.extremeEventsUnavailable = false;
+    this.structureDiagnosticsUnavailable = false;
+    this.structureEventsUnavailable = false;
     this.extremeEventTracker = new ExtremeEventTracker(db);
+    this.structureEventTracker = new StructureEventTracker(db);
   }
 
   start() {
@@ -80,6 +92,7 @@ class Scheduler {
       this.candidateScanTimer ||
       this.pumpScanTimer ||
       this.extremeWideScanTimer ||
+      this.structureWideScanTimer ||
       this.resetTimer
     ) return;
 
@@ -102,6 +115,12 @@ class Scheduler {
         EXTREME_WIDE_SCAN_INTERVAL_MS
       );
     }
+    if (STRUCTURE_AUTO_RESEARCH_ENABLED) {
+      this.structureWideScanTimer = setInterval(
+        () => this._structureWideResearchScan(),
+        STRUCTURE_AUTO_SCAN_INTERVAL_MS
+      );
+    }
     this._scheduleDailyReset();
 
     if (CANDIDATE_PROJECT_ENABLED) {
@@ -111,6 +130,9 @@ class Scheduler {
     setTimeout(() => this._pumpAutoScan(), 7 * 60 * 1000);
     if (EXTREME_WIDE_SCAN_ENABLED) {
       setTimeout(() => this._extremeWideDiagnosticScan(), 8 * 60 * 1000);
+    }
+    if (STRUCTURE_AUTO_RESEARCH_ENABLED) {
+      setTimeout(() => this._structureWideResearchScan(), 9 * 60 * 1000);
     }
 
     console.log('✅ Daily reset at 08:00 Seoul');
@@ -129,6 +151,12 @@ class Scheduler {
       `⚡ Extreme wide diagnostics: ${EXTREME_WIDE_SCAN_ENABLED ? 'ON' : 'OFF'} ` +
       `| interval ${Math.round(EXTREME_WIDE_SCAN_INTERVAL_MS / 60000)} min ` +
       `| events=${EXTREME_EVENT_TRACKING_ENABLED ? 'RESEARCH' : 'OFF'} alerts=OFF`
+    );
+    console.log(
+      `🏗 Structure research: ${STRUCTURE_AUTO_RESEARCH_ENABLED ? 'ON' : 'OFF'} ` +
+      `| interval ${Math.round(STRUCTURE_AUTO_SCAN_INTERVAL_MS / 60000)} min ` +
+      `| events=${STRUCTURE_EVENT_TRACKING_ENABLED ? 'RESEARCH' : 'OFF'} ` +
+      `paper=OFF alerts=OFF`
     );
     console.log('⏳ First active project scan in 7 minutes (WS data accumulation)');
   }
@@ -149,6 +177,10 @@ class Scheduler {
     if (this.extremeWideScanTimer) {
       clearInterval(this.extremeWideScanTimer);
       this.extremeWideScanTimer = null;
+    }
+    if (this.structureWideScanTimer) {
+      clearInterval(this.structureWideScanTimer);
+      this.structureWideScanTimer = null;
     }
     if (this.resetTimer) {
       clearTimeout(this.resetTimer);
@@ -346,6 +378,74 @@ class Scheduler {
       }
 
       console.error('❌ Extreme wide diagnostic scan failed:', message);
+      return null;
+    }
+  }
+
+  async _structureWideResearchScan() {
+    if (
+      !STRUCTURE_AUTO_RESEARCH_ENABLED ||
+      this.structureDiagnosticsUnavailable
+    ) return null;
+
+    console.log('🏗 Structure wide research scan triggered...');
+    this.lastStructureWideScanTime = new Date();
+
+    try {
+      const scan = await StructureWideRadar.scan(this.provider);
+      if (
+        STRUCTURE_EVENT_TRACKING_ENABLED &&
+        !this.structureEventsUnavailable
+      ) {
+        try {
+          scan.eventTracking = await this.structureEventTracker.processScan(scan);
+          scan.eventsCreated = scan.eventTracking.created;
+        } catch (eventError) {
+          const eventMessage = String(eventError?.message || '');
+          const missingEventsTable = (
+            eventError?.code === '42P01' ||
+            eventError?.code === 'PGRST205' ||
+            eventMessage.includes('structure_events')
+          );
+          if (missingEventsTable) {
+            this.structureEventsUnavailable = true;
+            console.warn(
+              '⚠️ Structure event tracking disabled: structure_events migration is missing'
+            );
+          } else {
+            console.error('❌ Structure event tracking failed:', eventMessage);
+          }
+        }
+      }
+
+      await this.db.createResearchScanDiagnostic(
+        StructureWideRadar.toDiagnostic(scan)
+      );
+      console.log(
+        `🏗 Structure research: scanned=${scan.scannedPairs} ` +
+        `liquid=${scan.liquidPairs} analyzed=${scan.analyzedPairs} ` +
+        `candidates=${scan.candidateCount} ` +
+        `watch+${scan.eventTracking?.created || 0} ` +
+        `armed+${scan.eventTracking?.armed || 0} ` +
+        `triggered+${scan.eventTracking?.triggered || 0} ` +
+        `paper=0 alerts=0`
+      );
+      return scan;
+    } catch (error) {
+      const message = String(error?.message || '');
+      const missingTable = (
+        error?.code === '42P01' ||
+        error?.code === 'PGRST205' ||
+        message.includes('research_scan_diagnostics')
+      );
+      if (missingTable) {
+        this.structureDiagnosticsUnavailable = true;
+        console.warn(
+          '⚠️ Structure diagnostics disabled: research_scan_diagnostics migration is missing'
+        );
+        return null;
+      }
+      console.error('❌ Structure wide research scan failed:', message);
       return null;
     }
   }
@@ -1131,6 +1231,12 @@ ${paperSignal ? '\n🧪 Paper signal записан для отслеживан�
       lastExtremeWideScan: this.lastExtremeWideScanTime,
       nextExtremeWideScan: EXTREME_WIDE_SCAN_ENABLED
         ? new Date(Date.now() + EXTREME_WIDE_SCAN_INTERVAL_MS)
+        : null,
+      structureAutoResearchEnabled: STRUCTURE_AUTO_RESEARCH_ENABLED,
+      structureEventTrackingEnabled: STRUCTURE_EVENT_TRACKING_ENABLED,
+      lastStructureWideScan: this.lastStructureWideScanTime,
+      nextStructureWideScan: STRUCTURE_AUTO_RESEARCH_ENABLED
+        ? new Date(Date.now() + STRUCTURE_AUTO_SCAN_INTERVAL_MS)
         : null,
       cryptoMarketOpen: true,
       msUntilReset: this._getMsUntilNext8am(),

@@ -7,6 +7,11 @@ const {
   EXTREME_EXPERIMENT_ID,
   EXTREME_EVENT_STATES,
 } = require('../config/extremeRadar');
+const {
+  STRUCTURE_PROJECT,
+  STRUCTURE_EVENT_EXPERIMENT_ID,
+  STRUCTURE_EVENT_STATES,
+} = require('../config/structure');
 
 const TRADE_CONTEXT_FIELDS = [
   'strategy_version',
@@ -324,6 +329,94 @@ class SupabaseClient {
     if (filters.scenario) {
       query = query.eq('scenario', filters.scenario);
     }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  }
+
+  async createStructureEvent(eventData) {
+    const payload = {
+      ...eventData,
+      project: STRUCTURE_PROJECT,
+      experiment_id: eventData.experiment_id ||
+        STRUCTURE_EVENT_EXPERIMENT_ID,
+    };
+    const { data, error } = await this.client
+      .from('structure_events')
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error?.code === '23505') {
+      console.log(
+        `🏗 Structure event duplicate skipped: ${payload.pair} ${payload.scenario}`
+      );
+      return null;
+    }
+    if (error) throw error;
+    return data;
+  }
+
+  async updateStructureEvent(eventId, updates) {
+    const { data, error } = await this.client
+      .from('structure_events')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', eventId)
+      .eq('project', STRUCTURE_PROJECT)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  }
+
+  async getActiveStructureEvents(filters = {}) {
+    let query = this.client
+      .from('structure_events')
+      .select('*')
+      .eq('project', STRUCTURE_PROJECT)
+      .eq(
+        'experiment_id',
+        filters.experimentId || STRUCTURE_EVENT_EXPERIMENT_ID
+      )
+      .in('state', [
+        STRUCTURE_EVENT_STATES.WATCH,
+        STRUCTURE_EVENT_STATES.ARMED,
+        STRUCTURE_EVENT_STATES.TRIGGERED,
+      ])
+      .order('updated_at', { ascending: false });
+
+    if (filters.pair) {
+      query = query.eq('pair', String(filters.pair).toUpperCase());
+    }
+    if (filters.scenario) {
+      query = query.eq('scenario', filters.scenario);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  }
+
+  async getStructureEventsSince(since, filters = {}) {
+    const sinceIso = since instanceof Date ? since.toISOString() : since;
+    let query = this.client
+      .from('structure_events')
+      .select('*')
+      .eq('project', STRUCTURE_PROJECT)
+      .eq(
+        'experiment_id',
+        filters.experimentId || STRUCTURE_EVENT_EXPERIMENT_ID
+      )
+      .gte('created_at', sinceIso)
+      .order('created_at', { ascending: false });
+
+    if (filters.state) query = query.eq('state', filters.state);
+    if (filters.scenario) query = query.eq('scenario', filters.scenario);
 
     const { data, error } = await query;
     if (error) throw error;

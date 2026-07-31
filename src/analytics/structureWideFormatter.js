@@ -32,7 +32,16 @@ class StructureWideFormatter {
       '',
       `Диагностический снимок сохранён: ${scan.diagnosticSaved ? 'YES' : 'NO'}`,
       'Score показывает качество наблюдения, а не вероятность сделки.',
-      'Events: 0 | Paper: 0 | Alerts: OFF | Live: OFF',
+      ...(scan.eventTracking?.enabled
+        ? [
+          `Research lifecycle: WATCH +${scan.eventTracking.created}` +
+            ` | ARMED +${scan.eventTracking.armed}` +
+            ` | TRIGGERED +${scan.eventTracking.triggered}` +
+            ` | INVALIDATED +${scan.eventTracking.invalidated}` +
+            ` | EXPIRED +${scan.eventTracking.expired}`,
+        ]
+        : ['Research lifecycle: OFF']),
+      'Paper: 0 | Alerts: OFF | Live: OFF',
     ].join('\n');
   }
 

@@ -118,7 +118,8 @@ StructureWideRadar.scan(provider, {
         name: 'Telegram report clearly remains diagnostic-only',
         pass: message.includes('STRUCTURE WIDE RADAR · DIAGNOSTIC') &&
           message.includes('Диагностический снимок сохранён: YES') &&
-          message.includes('Events: 0 | Paper: 0 | Alerts: OFF | Live: OFF'),
+          message.includes('Research lifecycle: OFF') &&
+          message.includes('Paper: 0 | Alerts: OFF | Live: OFF'),
       },
     ];
 
