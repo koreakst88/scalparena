@@ -37,11 +37,13 @@ class StructureWideFormatter {
           `Research lifecycle: WATCH +${scan.eventTracking.created}` +
             ` | ARMED +${scan.eventTracking.armed}` +
             ` | TRIGGERED +${scan.eventTracking.triggered}` +
+            ` | PAPER READY +${scan.eventTracking.paperReady || 0}` +
             ` | INVALIDATED +${scan.eventTracking.invalidated}` +
             ` | EXPIRED +${scan.eventTracking.expired}`,
         ]
         : ['Research lifecycle: OFF']),
-      'Paper: 0 | Alerts: OFF | Live: OFF',
+      `Paper created: ${scan.paperSignalsCreated || 0}` +
+        ' | Alerts: OFF | Live: OFF',
     ].join('\n');
   }
 

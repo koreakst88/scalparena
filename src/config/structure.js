@@ -110,6 +110,29 @@ module.exports = {
     process.env.STRUCTURE_EVENT_HISTORY_LIMIT,
     100
   ),
-  STRUCTURE_PAPER_SIGNALS_ENABLED: false,
+  STRUCTURE_EVENT_RETEST_TOLERANCE_PERCENT: parsePositiveNumber(
+    process.env.STRUCTURE_EVENT_RETEST_TOLERANCE_PERCENT,
+    0.25
+  ),
+  STRUCTURE_PAPER_SIGNALS_ENABLED: parseBoolean(
+    process.env.STRUCTURE_PAPER_SIGNALS_ENABLED,
+    false
+  ),
+  STRUCTURE_PAPER_TTL_MINUTES: parsePositiveNumber(
+    process.env.STRUCTURE_PAPER_TTL_MINUTES,
+    360
+  ),
+  STRUCTURE_PAPER_MIN_RR: parsePositiveNumber(
+    process.env.STRUCTURE_PAPER_MIN_RR,
+    1.2
+  ),
+  STRUCTURE_PAPER_MAX_RISK_PERCENT: parsePositiveNumber(
+    process.env.STRUCTURE_PAPER_MAX_RISK_PERCENT,
+    3
+  ),
+  STRUCTURE_PAPER_STOP_ATR_BUFFER: parsePositiveNumber(
+    process.env.STRUCTURE_PAPER_STOP_ATR_BUFFER,
+    0.1
+  ),
   STRUCTURE_ALERTS_ENABLED: false,
 };

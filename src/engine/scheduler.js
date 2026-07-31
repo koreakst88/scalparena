@@ -9,6 +9,7 @@ const ExtremeWideRadar = require('./extremeWideRadar');
 const ExtremeEventTracker = require('./extremeEventTracker');
 const StructureWideRadar = require('./structureWideRadar');
 const StructureEventTracker = require('./structureEventTracker');
+const StructurePaperSignalEngine = require('./structurePaperSignalEngine');
 const MarketContextV1 = require('./marketContextV1');
 const RiskManager = require('./riskManager');
 const {
@@ -42,6 +43,7 @@ const {
   CURRENT_PAPER_EXPERIMENT_ID,
   CANDIDATE_V3_EXPERIMENT_ID,
   PUMP_V2_EXPERIMENT_ID,
+  STRUCTURE_PAPER_EXPERIMENT_ID,
   PAPER_PROJECTS,
 } = require('../config/paperExperiment');
 const { MARKET_CONTEXT_V1_ENABLED } = require('../config/marketContext');
@@ -54,6 +56,7 @@ const {
   STRUCTURE_AUTO_RESEARCH_ENABLED,
   STRUCTURE_AUTO_SCAN_INTERVAL_MS,
   STRUCTURE_EVENT_TRACKING_ENABLED,
+  STRUCTURE_PAPER_SIGNALS_ENABLED,
 } = require('../config/structure');
 
 const SCAN_INTERVAL_MS = 15 * 60 * 1000;
@@ -156,7 +159,7 @@ class Scheduler {
       `🏗 Structure research: ${STRUCTURE_AUTO_RESEARCH_ENABLED ? 'ON' : 'OFF'} ` +
       `| interval ${Math.round(STRUCTURE_AUTO_SCAN_INTERVAL_MS / 60000)} min ` +
       `| events=${STRUCTURE_EVENT_TRACKING_ENABLED ? 'RESEARCH' : 'OFF'} ` +
-      `paper=OFF alerts=OFF`
+      `paper=${STRUCTURE_PAPER_SIGNALS_ENABLED ? 'SHADOW' : 'OFF'} alerts=OFF`
     );
     console.log('⏳ First active project scan in 7 minutes (WS data accumulation)');
   }
@@ -392,7 +395,33 @@ class Scheduler {
     this.lastStructureWideScanTime = new Date();
 
     try {
-      const scan = await StructureWideRadar.scan(this.provider);
+      let priorityPairs = [];
+      if (
+        STRUCTURE_EVENT_TRACKING_ENABLED &&
+        !this.structureEventsUnavailable
+      ) {
+        try {
+          const activeEvents = await this.db.getActiveStructureEvents();
+          priorityPairs = activeEvents.map((event) => event.pair);
+        } catch (priorityError) {
+          const message = String(priorityError?.message || '');
+          if (
+            priorityError?.code === '42P01' ||
+            priorityError?.code === 'PGRST205' ||
+            message.includes('structure_events')
+          ) {
+            this.structureEventsUnavailable = true;
+          } else {
+            console.error(
+              '❌ Structure priority follow-up lookup failed:',
+              message
+            );
+          }
+        }
+      }
+      const scan = await StructureWideRadar.scan(this.provider, {
+        priorityPairs,
+      });
       if (
         STRUCTURE_EVENT_TRACKING_ENABLED &&
         !this.structureEventsUnavailable
@@ -400,6 +429,15 @@ class Scheduler {
         try {
           scan.eventTracking = await this.structureEventTracker.processScan(scan);
           scan.eventsCreated = scan.eventTracking.created;
+          if (
+            STRUCTURE_PAPER_SIGNALS_ENABLED &&
+            PAPER_SIGNAL_TRACKING_ENABLED
+          ) {
+            scan.paperTracking = await this._recordStructurePaperSignals(
+              scan.eventTracking.readyEvents
+            );
+            scan.paperSignalsCreated = scan.paperTracking.saved;
+          }
         } catch (eventError) {
           const eventMessage = String(eventError?.message || '');
           const missingEventsTable = (
@@ -428,7 +466,8 @@ class Scheduler {
         `watch+${scan.eventTracking?.created || 0} ` +
         `armed+${scan.eventTracking?.armed || 0} ` +
         `triggered+${scan.eventTracking?.triggered || 0} ` +
-        `paper=0 alerts=0`
+        `paperReady=${scan.eventTracking?.paperReady || 0} ` +
+        `paper+${scan.paperSignalsCreated || 0} alerts=0`
       );
       return scan;
     } catch (error) {
@@ -448,6 +487,93 @@ class Scheduler {
       console.error('❌ Structure wide research scan failed:', message);
       return null;
     }
+  }
+
+  async _recordStructurePaperSignals(events = []) {
+    const summary = {
+      eligible: 0,
+      rejected: 0,
+      duplicates: 0,
+      saved: 0,
+    };
+    if (
+      !STRUCTURE_PAPER_SIGNALS_ENABLED ||
+      !PAPER_SIGNAL_TRACKING_ENABLED ||
+      !events.length
+    ) return summary;
+
+    const decisions = events.map((event) => ({
+      event,
+      paper: StructurePaperSignalEngine.build(event),
+    }));
+
+    for (const decision of decisions.filter((item) => !item.paper.eligible)) {
+      summary.rejected += 1;
+      await this.structureEventTracker.markPaperRecorded(
+        decision.event,
+        [],
+        new Date(),
+        `PAPER_REJECTED_${decision.paper.reason}`
+      );
+    }
+
+    const eligible = decisions.filter((item) => item.paper.eligible);
+    summary.eligible = eligible.length;
+    if (!eligible.length) return summary;
+
+    const { data: users, error } = await this.db.client
+      .from('users')
+      .select('*')
+      .eq('auto_scan_enabled', true);
+    if (error || !users?.length) {
+      console.warn('🏗 Structure paper: no enabled research users');
+      return summary;
+    }
+
+    for (const { event, paper } of eligible) {
+      const savedSignals = [];
+      let duplicateForAllUsers = true;
+
+      for (const user of users) {
+        const userId = String(user.telegram_id);
+        const activeSignals = await this.db.getActivePaperSignals(userId, {
+          project: PAPER_PROJECTS.STRUCTURE,
+          experimentId: STRUCTURE_PAPER_EXPERIMENT_ID,
+        });
+        const duplicate = activeSignals.some((signal) => (
+          this._normalizePair(signal.pair) ===
+            this._normalizePair(paper.signal.pair) &&
+          signal.direction === paper.signal.type
+        ));
+        if (duplicate) continue;
+
+        duplicateForAllUsers = false;
+        const saved = await this.bot._trackPaperSignal(
+          userId,
+          paper.signal,
+          'STRUCTURE_RETEST_SHADOW'
+        );
+        if (saved) savedSignals.push(saved);
+      }
+
+      if (duplicateForAllUsers) summary.duplicates += 1;
+      summary.saved += savedSignals.length;
+      await this.structureEventTracker.markPaperRecorded(
+        event,
+        savedSignals,
+        new Date(),
+        savedSignals.length
+          ? 'RETEST_PAPER_RECORDED'
+          : 'PAPER_SKIPPED_ACTIVE_DUPLICATE'
+      );
+    }
+
+    console.log(
+      `🏗 Structure paper shadow: eligible=${summary.eligible} ` +
+      `rejected=${summary.rejected} duplicate=${summary.duplicates} ` +
+      `saved=${summary.saved} alerts=0`
+    );
+    return summary;
   }
 
   _getStrictCandidateAlerts(reports) {

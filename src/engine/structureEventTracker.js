@@ -4,6 +4,7 @@ const {
   STRUCTURE_EVENT_ARM_OBSERVATIONS,
   STRUCTURE_EVENT_TRIGGER_BUFFER_PERCENT,
   STRUCTURE_EVENT_INVALIDATION_PERCENT,
+  STRUCTURE_EVENT_RETEST_TOLERANCE_PERCENT,
   STRUCTURE_EVENT_STALE_MINUTES,
   STRUCTURE_EVENT_MAX_HOURS,
   STRUCTURE_EVENT_HISTORY_LIMIT,
@@ -23,6 +24,8 @@ class StructureEventTracker {
       STRUCTURE_EVENT_TRIGGER_BUFFER_PERCENT;
     this.invalidationPercent = options.invalidationPercent ||
       STRUCTURE_EVENT_INVALIDATION_PERCENT;
+    this.retestTolerancePercent = options.retestTolerancePercent ||
+      STRUCTURE_EVENT_RETEST_TOLERANCE_PERCENT;
     this.staleMinutes = options.staleMinutes ||
       STRUCTURE_EVENT_STALE_MINUTES;
     this.maxHours = options.maxHours || STRUCTURE_EVENT_MAX_HOURS;
@@ -40,6 +43,8 @@ class StructureEventTracker {
       triggered: 0,
       invalidated: 0,
       expired: 0,
+      paperReady: 0,
+      readyEvents: [],
     };
     if (!this.enabled) return summary;
 
@@ -87,6 +92,10 @@ class StructureEventTracker {
         summary.invalidated += 1;
       } else {
         activePairs.add(event.pair);
+      }
+      if (result.paperReady) {
+        summary.paperReady += 1;
+        summary.readyEvents.push(result.event);
       }
     }
 
@@ -178,6 +187,7 @@ class StructureEventTracker {
     };
     let nextState = previousState;
     let transitionReason = null;
+    let paperReady = false;
 
     if (
       [STRUCTURE_EVENT_STATES.WATCH, STRUCTURE_EVENT_STATES.ARMED]
@@ -210,6 +220,12 @@ class StructureEventTracker {
         metrics.triggered_at = now.toISOString();
         metrics.trigger_outcome = outcome;
       }
+    } else if (nextState === STRUCTURE_EVENT_STATES.TRIGGERED) {
+      const followUp = this._observeTriggered(event, report, metrics, now);
+      nextState = followUp.state;
+      transitionReason = followUp.transitionReason;
+      paperReady = followUp.paperReady;
+      if (followUp.resolvedAt) updates.resolved_at = followUp.resolvedAt;
     }
 
     if (nextState !== previousState) {
@@ -224,7 +240,150 @@ class StructureEventTracker {
     return {
       state: nextState !== previousState ? nextState : null,
       event: updated || { ...event, ...updates },
+      paperReady,
     };
+  }
+
+  async markPaperRecorded(
+    event,
+    paperSignals = [],
+    now = new Date(),
+    decisionReason = null
+  ) {
+    const metrics = {
+      ...(event.metrics || {}),
+      paper_decided_at: now.toISOString(),
+      ...(paperSignals.length
+        ? { paper_recorded_at: now.toISOString() }
+        : {}),
+      paper_signal_ids: paperSignals.map((signal) => signal.id).filter(Boolean),
+      paper_signal_count: paperSignals.length,
+      paper_decision_reason: decisionReason,
+    };
+    return this.db.updateStructureEvent(event.id, {
+      state: STRUCTURE_EVENT_STATES.RESOLVED,
+      metrics,
+      resolved_at: now.toISOString(),
+      transition_history: [
+        ...(event.transition_history || []),
+        this._transition(
+          event.state,
+          STRUCTURE_EVENT_STATES.RESOLVED,
+          now,
+          decisionReason || (
+            paperSignals.length
+              ? 'RETEST_PAPER_RECORDED'
+              : 'RETEST_PAPER_SKIPPED'
+          )
+        ),
+      ],
+    });
+  }
+
+  _observeTriggered(event, report, metrics, now) {
+    const direction = this._triggerDirection(event);
+    if (!direction) {
+      return {
+        state: STRUCTURE_EVENT_STATES.INVALIDATED,
+        transitionReason: 'UNKNOWN_TRIGGER_DIRECTION',
+        resolvedAt: now.toISOString(),
+        paperReady: false,
+      };
+    }
+
+    if (this._postTriggerInvalidated(event, report.currentPrice, direction)) {
+      return {
+        state: STRUCTURE_EVENT_STATES.INVALIDATED,
+        transitionReason: 'RETEST_BROKE_ORIGINAL_ZONE',
+        resolvedAt: now.toISOString(),
+        paperReady: false,
+      };
+    }
+
+    if (metrics.paper_ready_at) {
+      return {
+        state: STRUCTURE_EVENT_STATES.TRIGGERED,
+        transitionReason: null,
+        paperReady: true,
+      };
+    }
+
+    if (!event.metrics?.retest_seen_at) {
+      if (this._isRetest(event, report.currentPrice, direction)) {
+        metrics.retest_seen_at = now.toISOString();
+        metrics.retest_price = Number(report.currentPrice);
+      }
+      return {
+        state: STRUCTURE_EVENT_STATES.TRIGGERED,
+        transitionReason: null,
+        paperReady: false,
+      };
+    }
+
+    if (this._isReconfirmed(event, report.currentPrice, direction)) {
+      metrics.paper_ready_at = now.toISOString();
+      metrics.paper_entry_price = Number(report.currentPrice);
+      metrics.paper_direction = direction;
+      return {
+        state: STRUCTURE_EVENT_STATES.TRIGGERED,
+        transitionReason: null,
+        paperReady: true,
+      };
+    }
+
+    return {
+      state: STRUCTURE_EVENT_STATES.TRIGGERED,
+      transitionReason: null,
+      paperReady: false,
+    };
+  }
+
+  _triggerDirection(event) {
+    const outcome = event.metrics?.trigger_outcome;
+    if (['BREAKOUT_UP_CONFIRMED', 'ZONE_EXIT_UP_CONFIRMED'].includes(outcome)) {
+      return 'LONG';
+    }
+    if (
+      ['BREAKDOWN_DOWN_CONFIRMED', 'ZONE_EXIT_DOWN_CONFIRMED'].includes(outcome)
+    ) {
+      return 'SHORT';
+    }
+    return null;
+  }
+
+  _isRetest(event, priceValue, direction) {
+    const price = Number(priceValue);
+    const lower = Number(event.zone_lower);
+    const upper = Number(event.zone_upper);
+    if (![price, lower, upper].every(Number.isFinite)) return false;
+    const tolerance = this.retestTolerancePercent / 100;
+
+    if (direction === 'LONG') {
+      return price <= upper * (1 + tolerance) && price >= lower;
+    }
+    return price >= lower * (1 - tolerance) && price <= upper;
+  }
+
+  _isReconfirmed(event, priceValue, direction) {
+    const price = Number(priceValue);
+    const lower = Number(event.zone_lower);
+    const upper = Number(event.zone_upper);
+    if (![price, lower, upper].every(Number.isFinite)) return false;
+    const buffer = this.triggerBufferPercent / 100;
+    return direction === 'LONG'
+      ? price > upper * (1 + buffer)
+      : price < lower * (1 - buffer);
+  }
+
+  _postTriggerInvalidated(event, priceValue, direction) {
+    const price = Number(priceValue);
+    const lower = Number(event.zone_lower);
+    const upper = Number(event.zone_upper);
+    if (![price, lower, upper].every(Number.isFinite)) return true;
+    const invalidation = this.invalidationPercent / 100;
+    return direction === 'LONG'
+      ? price < lower * (1 - invalidation)
+      : price > upper * (1 + invalidation);
   }
 
   _shouldArm(event, report, metrics, now) {
@@ -321,6 +480,8 @@ class StructureEventTracker {
       observed_zone_score: report.zone?.score ?? null,
       structure_4h: report.structure?.state,
       compression_1h: report.compression?.state,
+      atr_1h: report.atr1h ?? null,
+      structural_zones: report.structuralZones || null,
       turnover_24h: report.turnover24h,
       spread_percent: report.spreadPercent,
     };

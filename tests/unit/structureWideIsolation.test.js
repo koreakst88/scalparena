@@ -83,7 +83,7 @@ bot._onStructure({
         name: 'Telegram output remains explicitly diagnostic-only',
         pass: messages.some((message) => (
           message.includes('Research lifecycle: OFF') &&
-          message.includes('Paper: 0 | Alerts: OFF | Live: OFF')
+          message.includes('Paper created: 0 | Alerts: OFF | Live: OFF')
         )),
       },
       {

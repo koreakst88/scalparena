@@ -25,6 +25,9 @@ class StructureWideRadar {
         : Promise.resolve([]),
     ]);
     const spotUniverse = new Set(spotSymbols);
+    const priorityPairs = new Set(
+      (settings.priorityPairs || []).map((pair) => String(pair).toUpperCase())
+    );
     const spotVerificationEnabled = spotUniverse.size > 0;
     const rejectionCounts = {};
     const liquidUniverse = [];
@@ -35,6 +38,18 @@ class StructureWideRadar {
         spotVerificationEnabled,
       });
       if (!eligibility.eligible) {
+        const pair = String(ticker.symbol || '').toUpperCase();
+        const priorityFollowUp = priorityPairs.has(pair) &&
+          ['LOW_TURNOVER', 'WIDE_SPREAD'].includes(eligibility.reason);
+        if (priorityFollowUp) {
+          liquidUniverse.push({
+            ...ticker,
+            spreadPercent: eligibility.spreadPercent ??
+              this._spreadPercent(ticker),
+            priorityFollowUp: true,
+          });
+          return;
+        }
         this._count(rejectionCounts, eligibility.reason);
         return;
       }
@@ -46,6 +61,17 @@ class StructureWideRadar {
 
     liquidUniverse.sort((a, b) => Number(b.turnover24h) - Number(a.turnover24h));
     const selected = liquidUniverse.slice(0, settings.scanLimit);
+    const selectedPairs = new Set(
+      selected.map((ticker) => String(ticker.symbol).toUpperCase())
+    );
+    liquidUniverse
+      .filter((ticker) => priorityPairs.has(String(ticker.symbol).toUpperCase()))
+      .forEach((ticker) => {
+        const pair = String(ticker.symbol).toUpperCase();
+        if (selectedPairs.has(pair)) return;
+        selected.push({ ...ticker, priorityFollowUp: true });
+        selectedPairs.add(pair);
+      });
     if (liquidUniverse.length > selected.length) {
       rejectionCounts.DEEP_SCAN_LIMIT = liquidUniverse.length - selected.length;
     }
@@ -136,7 +162,15 @@ class StructureWideRadar {
       };
     }
 
-    return this._buildReport(ticker, levels, settings);
+    const report = this._buildReport(ticker, levels, settings);
+    if (ticker.priorityFollowUp) {
+      return {
+        ...report,
+        candidate: false,
+        rejectionReason: 'PRIORITY_FOLLOW_UP_ONLY',
+      };
+    }
+    return report;
   }
 
   static _buildReport(ticker, levels, settings) {
@@ -188,6 +222,11 @@ class StructureWideRadar {
       zoneDistancePercent: location.distancePercent,
       structure: levels.structure,
       compression: levels.compression,
+      atr1h: levels.atr1h,
+      structuralZones: {
+        resistance: levels.resistance || [],
+        support: levels.support || [],
+      },
       turnover24h: Number(ticker.turnover24h),
       spreadPercent: this._spreadPercent(ticker),
       priceChange24hPercent: Number(ticker.priceChange24hPercent || 0),
@@ -319,7 +358,7 @@ class StructureWideRadar {
         liquidPairs: scan.liquidPairs,
         deepScanSelected: scan.deepScanSelected,
         settings: scan.settings,
-        eventTracking: scan.eventTracking || null,
+        eventTracking: this._eventTrackingSummary(scan.eventTracking),
         signalsGenerated: scan.signalsGenerated || 0,
         eventsCreated: scan.eventsCreated || 0,
         paperSignalsCreated: scan.paperSignalsCreated || 0,
@@ -367,6 +406,12 @@ class StructureWideRadar {
     return results;
   }
 
+  static _eventTrackingSummary(eventTracking) {
+    if (!eventTracking) return null;
+    const { readyEvents: _readyEvents, ...summary } = eventTracking;
+    return summary;
+  }
+
   static _settings(options) {
     return {
       scanLimit: Math.floor(options.scanLimit || STRUCTURE_WIDE_SCAN_LIMIT),
@@ -379,6 +424,7 @@ class StructureWideRadar {
         STRUCTURE_WIDE_MAX_ZONE_DISTANCE_PERCENT,
       candidateScore: options.candidateScore ||
         STRUCTURE_WIDE_CANDIDATE_SCORE,
+      priorityPairs: [...new Set(options.priorityPairs || [])],
     };
   }
 

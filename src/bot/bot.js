@@ -38,6 +38,7 @@ const {
   CURRENT_PAPER_EXPERIMENT_ID,
   CANDIDATE_V3_EXPERIMENT_ID,
   PUMP_V2_EXPERIMENT_ID,
+  STRUCTURE_PAPER_EXPERIMENT_ID,
   getPaperProject,
   getPaperStrategyVersion,
 } = require('../config/paperExperiment');
@@ -82,6 +83,9 @@ const {
   STRUCTURE_AUTO_SCAN_INTERVAL_MS,
   STRUCTURE_EVENT_TRACKING_ENABLED,
   STRUCTURE_PAPER_SIGNALS_ENABLED,
+  STRUCTURE_PAPER_TTL_MINUTES,
+  STRUCTURE_PAPER_MIN_RR,
+  STRUCTURE_PAPER_MAX_RISK_PERCENT,
   STRUCTURE_ALERTS_ENABLED,
 } = require('../config/structure');
 const {
@@ -970,6 +974,7 @@ ${insights}
           `Исследование уровней: ${STRUCTURE_LEVEL_EXPERIMENT_ID}`,
           `Wide Radar: ${STRUCTURE_WIDE_EXPERIMENT_ID}`,
           `Event lifecycle: ${STRUCTURE_EVENT_EXPERIMENT_ID}`,
+          `Paper experiment: ${STRUCTURE_PAPER_EXPERIMENT_ID}`,
           `Хранилище structure_events: ${storageStatus}`,
           `Активных research-событий: ${activeEvents}`,
           `Состояния: ${eventStates}`,
@@ -983,6 +988,9 @@ ${insights}
             ` | ${Math.round(STRUCTURE_AUTO_SCAN_INTERVAL_MS / 60000)} мин`,
           `Events: ${STRUCTURE_EVENT_TRACKING_ENABLED ? 'ON (research only)' : 'OFF'}`,
           `Paper-сигналы: ${STRUCTURE_PAPER_SIGNALS_ENABLED ? 'ON' : 'OFF'}`,
+          `Paper gate: retest + RR ≥ ${STRUCTURE_PAPER_MIN_RR}` +
+            ` | риск ≤ ${STRUCTURE_PAPER_MAX_RISK_PERCENT}%` +
+            ` | TTL ${STRUCTURE_PAPER_TTL_MINUTES} мин`,
           `Telegram-алерты: ${STRUCTURE_ALERTS_ENABLED ? 'ON' : 'OFF'}`,
           'Live-сделки: OFF',
           '',
@@ -1000,7 +1008,18 @@ ${insights}
         userId,
         '🏗 Structure Radar проверяет рынок. Paper и Telegram-алерты не создаются...'
       );
-      const scan = await StructureWideRadar.scan(this.provider);
+      let priorityPairs = [];
+      if (STRUCTURE_EVENT_TRACKING_ENABLED) {
+        try {
+          const activeEvents = await this.db.getActiveStructureEvents();
+          priorityPairs = activeEvents.map((event) => event.pair);
+        } catch (_error) {
+          priorityPairs = [];
+        }
+      }
+      const scan = await StructureWideRadar.scan(this.provider, {
+        priorityPairs,
+      });
       scan.diagnosticSaved = false;
 
       if (STRUCTURE_EVENT_TRACKING_ENABLED) {
@@ -2348,7 +2367,9 @@ Exit:  \`$${price}\`
     const project = getPaperProject(signal, source);
     const ttlMinutes = ['PUMP', 'PUMP_V2_SHADOW'].includes(project)
       ? PUMP_HUNTER_SIGNAL_TTL_MINUTES
-      : PAPER_SIGNAL_TTL_MINUTES;
+      : project === 'STRUCTURE'
+        ? STRUCTURE_PAPER_TTL_MINUTES
+        : PAPER_SIGNAL_TTL_MINUTES;
     const expiresAt = new Date(now.getTime() + ttlMinutes * 60 * 1000);
     const timeframe = signal.timeframe || (
       ['PUMP', 'PUMP_V2_SHADOW'].includes(project)

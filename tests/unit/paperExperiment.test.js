@@ -3,6 +3,7 @@ const {
   CANDIDATE_V3_EXPERIMENT_ID,
   PUMP_V2_EXPERIMENT_ID,
   EXTREME_EXPERIMENT_ID,
+  STRUCTURE_PAPER_EXPERIMENT_ID,
   getPaperProject,
   getPaperStrategyVersion,
 } = require('../../src/config/paperExperiment');
@@ -10,6 +11,18 @@ const {
 console.log('Paper Experiment Config Test\n');
 
 const checks = [
+  {
+    name: 'Structure retest shadow owns an isolated paper cohort',
+    pass: STRUCTURE_PAPER_EXPERIMENT_ID ===
+        'STRUCTURE_V1_RETEST_SHADOW_20260731' &&
+      getPaperProject(
+        { strategy: 'STRUCTURE_BREAKOUT_RETEST_V1_SHADOW' },
+        'STRUCTURE_RETEST_SHADOW'
+      ) === 'STRUCTURE' &&
+      getPaperStrategyVersion({
+        strategy: 'STRUCTURE_BREAKOUT_RETEST_V1_SHADOW',
+      }) === 'structure_breakout_retest_v1_shadow',
+  },
   {
     name: 'Extreme Radar owns an isolated research cohort',
     pass: EXTREME_EXPERIMENT_ID === 'EXTREME_V1_RESEARCH_20260725' &&

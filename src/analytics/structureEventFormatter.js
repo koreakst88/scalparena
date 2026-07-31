@@ -9,6 +9,12 @@ class StructureEventFormatter {
         `Цена: старт ${this._price(event.reference_price)}` +
           ` | последняя ${this._price(event.metrics?.last_price)}` +
           ` | наблюдений ${Number(event.metrics?.observation_count || 0)}`,
+        ...(event.state === 'TRIGGERED'
+          ? [
+            `Ретест: ${event.metrics?.retest_seen_at ? 'зафиксирован' : 'ожидается'}` +
+              ` | paper-ready: ${event.metrics?.paper_ready_at ? 'YES' : 'NO'}`,
+          ]
+          : []),
         ...(event.metrics?.trigger_outcome
           ? [`Результат: ${this._outcome(event.metrics.trigger_outcome)}`]
           : []),

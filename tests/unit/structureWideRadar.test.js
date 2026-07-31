@@ -119,7 +119,7 @@ StructureWideRadar.scan(provider, {
         pass: message.includes('STRUCTURE WIDE RADAR · DIAGNOSTIC') &&
           message.includes('Диагностический снимок сохранён: YES') &&
           message.includes('Research lifecycle: OFF') &&
-          message.includes('Paper: 0 | Alerts: OFF | Live: OFF'),
+          message.includes('Paper created: 0 | Alerts: OFF | Live: OFF'),
       },
     ];
 

@@ -132,6 +132,15 @@ class PaperSignalTracker {
       } else if (this.provider.getRestKlines) {
         candles = await this.provider.getRestKlines(pair, timeframe, limit) || [];
       }
+    } else if (
+      this._isStructureSignal(signal) &&
+      this.provider.getGateFuturesKlines
+    ) {
+      candles = await this.provider.getGateFuturesKlines(
+        pair,
+        timeframe,
+        limit
+      ) || [];
     } else {
       candles = this.provider.getCandles(pair, limit) || [];
     }
@@ -190,6 +199,18 @@ class PaperSignalTracker {
   }
 
   async _getCurrentPrice(pair, signal = {}, pathCandles = []) {
+    if (
+      this._isStructureSignal(signal) &&
+      this.provider.getGateFuturesKlines
+    ) {
+      const gateCandles = await this.provider.getGateFuturesKlines(
+        pair,
+        String(signal.timeframe || '15'),
+        2
+      ) || [];
+      return Number(gateCandles[gateCandles.length - 1]?.close) || null;
+    }
+
     const currentCandle = this.provider.getCurrentCandle(pair);
     if (currentCandle?.close) return Number(currentCandle.close);
 
@@ -266,7 +287,18 @@ class PaperSignalTracker {
       signal.source === 'CANDIDATE_V3' ||
       signal.project === 'PUMP_V2_SHADOW' ||
       ['PUMP_STATE_V2_SHADOW', 'PUMP_STATE_V2_1_SHADOW'].includes(signal.strategy) ||
-      signal.source === 'PUMP_V2_SHADOW'
+      signal.source === 'PUMP_V2_SHADOW' ||
+      signal.project === 'STRUCTURE' ||
+      signal.strategy === 'STRUCTURE_BREAKOUT_RETEST_V1_SHADOW' ||
+      signal.source === 'STRUCTURE_RETEST_SHADOW'
+    );
+  }
+
+  _isStructureSignal(signal) {
+    return (
+      signal.project === 'STRUCTURE' ||
+      signal.strategy === 'STRUCTURE_BREAKOUT_RETEST_V1_SHADOW' ||
+      signal.source === 'STRUCTURE_RETEST_SHADOW'
     );
   }
 
